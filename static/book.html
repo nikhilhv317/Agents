@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Book an Appointment — Visukhi Dental Clinic</title>
+<style>
+  :root { --blue:#2196F3; --border:#e4e7ec; --muted:#8a94a6; }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,sans-serif; margin:0; background:#f5f7fa; color:#1a1a1a; }
+  .header { background:linear-gradient(135deg,#1976D2,#2196F3); color:#fff; text-align:center; padding:32px 20px; }
+  .header h1 { font-size:24px; margin:0 0 6px; } .header p { margin:0; opacity:.85; font-size:14px; }
+  .brand { font-size:28px; font-weight:800; margin-bottom:8px; } .brand b { color:#fff; } .brand span { color:#ffd54f; }
+  .container { max-width:520px; margin:32px auto; padding:0 16px 40px; }
+  .card { background:#fff; border:1px solid var(--border); border-radius:12px; padding:28px; box-shadow:0 2px 12px rgba(0,0,0,.06); }
+  .card h2 { font-size:18px; margin:0 0 20px; }
+  .field { margin-bottom:16px; } .field label { display:block; font-size:13px; color:#555; margin-bottom:6px; font-weight:500; }
+  .field input, .field select { width:100%; padding:10px 12px; font-size:14px; border:1px solid #ccd3dd; border-radius:8px; font-family:inherit; }
+  .field input:focus, .field select:focus { outline:none; border-color:var(--blue); }
+  .btn { width:100%; padding:12px; border-radius:8px; border:none; background:var(--blue); color:#fff; font-size:15px; font-weight:600; cursor:pointer; margin-top:8px; }
+  .btn:disabled { opacity:.55; cursor:default; }
+  .status { margin-top:16px; padding:12px 16px; border-radius:8px; font-size:14px; display:none; }
+  .status.success { background:#e7f6ec; color:#1a7f37; border:1px solid #b6e8c8; display:block; }
+  .status.error { background:#fde3e3; color:#c02626; border:1px solid #f5b8b8; display:block; }
+  .divider { text-align:center; color:var(--muted); font-size:13px; margin:20px 0; }
+  .info-list { list-style:none; padding:0; margin:0; } .info-list li { padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; display:flex; gap:10px; align-items:center; }
+  .info-list li:last-child { border:none; } .info-list .icon { font-size:18px; }
+  footer { text-align:center; color:var(--muted); font-size:12px; padding:16px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="brand"><b>denta</b><span>VIS</span></div>
+  <h1>Book an Appointment</h1>
+  <p>Visukhi Dental Clinic · Bengaluru</p>
+</div>
+<div class="container">
+  <div class="card">
+    <h2>Your details</h2>
+    <div class="field"><label>Full name *</label><input id="b-name" placeholder="e.g. Ramesh Kumar"></div>
+    <div class="field"><label>Phone number *</label><input id="b-phone" placeholder="+91 98000 00000"></div>
+    <div class="field"><label>Appointment type</label>
+      <select id="b-type"><option value="checkup">Check-up</option><option value="cleaning">Cleaning</option><option value="filling">Filling</option><option value="root_canal">Root Canal</option><option value="extraction">Extraction</option><option value="emergency">Emergency</option><option value="followup">Follow-up</option></select></div>
+    <div class="field"><label>Preferred date</label><input id="b-date" type="date"></div>
+    <div class="field"><label>Preferred time</label>
+      <select id="b-time"><option value="09:00">9:00 AM</option><option value="10:00">10:00 AM</option><option value="11:00">11:00 AM</option><option value="12:00">12:00 PM</option><option value="14:00">2:00 PM</option><option value="15:00">3:00 PM</option><option value="16:00">4:00 PM</option><option value="17:00">5:00 PM</option></select></div>
+    <button class="btn" id="btn-book">Confirm Booking</button>
+    <div id="book-status" class="status"></div>
+  </div>
+  <div class="divider">— clinic information —</div>
+  <div class="card">
+    <ul class="info-list">
+      <li><span class="icon">📍</span> 42 MG Road, Bengaluru — 560001</li>
+      <li><span class="icon">📞</span> +91 80 4567 8900</li>
+      <li><span class="icon">🕐</span> Mon–Sat · 9:00 AM – 6:00 PM</li>
+      <li><span class="icon">⚠️</span> For emergencies please call directly</li>
+    </ul>
+  </div>
+</div>
+<footer>© 2026 Visukhi Dental Clinic · AI-powered by dentaVIS</footer>
+<script>
+const $ = s => document.querySelector(s);
+$('#b-date').value = new Date().toISOString().slice(0,10);
+$('#btn-book').onclick = async () => {
+  const name = $('#b-name').value.trim();
+  const phone = $('#b-phone').value.trim();
+  const status = $('#book-status');
+  status.className = 'status'; status.style.display = 'none';
+  if(!name || !phone) { status.textContent = 'Please fill in your name and phone number.'; status.className = 'status error'; return; }
+  const btn = $('#btn-book'); btn.disabled = true; btn.textContent = 'Booking…';
+  try {
+    const ar = await fetch('/api/public/book', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, phone, appt_date:$('#b-date').value, appt_time:$('#b-time').value, appt_type:$('#b-type').value})
+    });
+    if(!ar.ok) throw new Error((await ar.json()).detail || 'Could not book');
+    const arData = await ar.json();
+    status.textContent = arData.duplicate
+      ? `You already have an appointment booked for ${name} on ${$('#b-date').value} at ${$('#b-time').value.replace(':00','')}.`
+      : `✓ Appointment booked for ${name} on ${$('#b-date').value} at ${$('#b-time').value.replace(':00','')}. We will confirm by phone.`;
+    status.className = 'status success';
+    ['b-name','b-phone'].forEach(id=>{ $('#'+id).value=''; });
+  } catch(e) { status.textContent = e.message || 'Something went wrong. Please call us.'; status.className = 'status error'; }
+  btn.disabled = false; btn.textContent = 'Confirm Booking';
+};
+</script>
+</body>
+</html>

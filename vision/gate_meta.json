@@ -1,0 +1,12 @@
+{
+  "model_name": "tf_efficientnetv2_s.in21k_ft_in1k",
+  "img_size": 224,
+  "classes": [
+    "dental",
+    "non_dental"
+  ],
+  "positive_class": "dental",
+  "threshold": 0.08,
+  "min_specificity_target": 0.9,
+  "best_val_auc": 0.9999777777777777
+}

@@ -1,0 +1,16 @@
+# secrets / local config
+.env
+
+# databases (local data, regenerate with setup.bat)
+*.db
+*.db-*
+*.sqlite
+
+# demo videos (large)
+*.mp4
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/

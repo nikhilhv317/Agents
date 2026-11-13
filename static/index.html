@@ -1,0 +1,1270 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dentaVIS</title>
+<style>
+  :root { --blue:#2196F3; --blue-dark:#1976D2; --bg:#f5f7fa; --border:#e4e7ec; --text:#1a1a1a; --muted:#8a94a6;
+          --green:#1a7f37; --green-bg:#e7f6ec; --yellow:#b5730a; --yellow-bg:#fdf1de; --red:#c02626; --red-bg:#fde3e3; }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,sans-serif; margin:0; color:var(--text); background:var(--bg); }
+  h1,h2,h3 { margin:0; }
+  #login-page { display:flex; align-items:center; justify-content:center; height:100vh; background:radial-gradient(circle at 20% 20%, #4a7fe0, var(--blue-dark) 70%); }
+  .login-card { background:#fff; border-radius:14px; padding:36px; width:380px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.2); }
+  .login-avatar { width:56px; height:56px; border-radius:50%; background:var(--blue); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; margin:0 auto 12px; }
+  .login-brand { font-size:15px; font-weight:700; margin:6px 0 2px; } .login-brand b { color:var(--blue); } .login-brand span { color:#f5a623; }
+  .login-tagline { font-size:12px; color:var(--muted); margin-bottom:20px; }
+  .login-card .field { text-align:left; } .login-card label { display:block; font-size:13px; margin:12px 0 6px; }
+  .login-remember { display:flex; align-items:center; gap:6px; font-size:13px; margin:14px 0; }
+  .login-footer { font-size:12px; color:var(--muted); margin-top:14px; } .login-footer b { color:var(--blue); }
+  #app { display:none; } #app.active { display:flex; min-height:100vh; }
+  .sidebar { width:220px; background:#fff; border-right:1px solid var(--border); flex-shrink:0; display:flex; flex-direction:column; }
+  .brand { font-size:20px; font-weight:800; padding:22px 24px 14px; } .brand b { color:var(--blue); } .brand span { color:#f5a623; }
+  .nav-zone { font-size:10px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:#aeb6c4; padding:14px 24px 4px; }
+  .nav-item { padding:10px 24px; cursor:pointer; color:#555; font-size:14px; display:flex; align-items:center; gap:10px; }
+  .nav-item:hover { background:#f2f6fc; }
+  .nav-item.active { background:#eaf3ff; color:var(--blue); font-weight:600; border-left:3px solid var(--blue); padding-left:21px; }
+  .sidebar-footer { margin-top:auto; padding:16px 24px; font-size:13px; color:var(--muted); border-top:1px solid var(--border); }
+  .main-col { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:18px 32px; background:#fff; border-bottom:1px solid var(--border); }
+  .topbar h1 { font-size:22px; }
+  .topbar-right { display:flex; align-items:center; gap:14px; }
+  .pill { display:flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:13px; }
+  .dot-green { width:8px; height:8px; border-radius:50%; background:#34c759; }
+  .avatar { width:34px; height:34px; border-radius:50%; background:var(--blue); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+  .who { font-size:13px; line-height:1.3; } .who b { display:block; } .who small { color:var(--muted); }
+  .patient-bar { background:#eef4ff; border-bottom:1px solid var(--border); padding:9px 32px; font-size:13px; color:#5a6b80; display:flex; align-items:center; gap:12px; }
+  .patient-bar b { color:var(--blue-dark); } .patient-bar .none { color:var(--muted); }
+  .patient-bar a { color:var(--blue); cursor:pointer; margin-left:auto; }
+  .content { flex:1; overflow-y:auto; padding:28px 32px; }
+  .page { display:none; } .page.active { display:block; }
+  .page-head { margin-bottom:18px; } .page-head h2 { font-size:22px; } .page-head p { color:var(--muted); font-size:13px; margin-top:4px; }
+  .card { background:#fff; border:1px solid var(--border); border-radius:10px; padding:22px; margin-bottom:20px; }
+  .card-strip { border-top:3px solid var(--blue); }
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
+  .stat b { font-size:26px; display:block; } .stat div.label { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px; }
+  .stat div.caption { font-size:12px; color:var(--muted); margin-top:6px; }
+  .stat.c1 { border-top-color:#2196F3; } .stat.c2 { border-top-color:#34c759; } .stat.c3 { border-top-color:#8e5ce6; } .stat.c4 { border-top-color:#f5a623; }
+  .section-label { font-size:12px; font-weight:700; color:var(--blue); text-transform:uppercase; letter-spacing:.04em; margin:0 0 12px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; } .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; }
+  .grid-main { display:grid; grid-template-columns:1fr 320px; gap:20px; align-items:start; }
+  @media (max-width:900px){ .grid-main,.grid2,.grid3{ grid-template-columns:1fr; } }
+  .subtabs { display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; }
+  .subtab { padding:8px 16px; border:1px solid var(--border); border-radius:8px; cursor:pointer; font-size:13px; background:#fff; }
+  .subtab.active { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .field { margin:0 0 14px; } .field label { display:block; font-size:13px; color:#555; margin-bottom:6px; }
+  .field-row { display:flex; align-items:center; gap:8px; }
+  .field input, .field select, .field textarea { width:100%; padding:9px 10px; font-size:14px; border:1px solid #ccd3dd; border-radius:7px; font-family:inherit; }
+  .field textarea { resize:vertical; min-height:70px; }
+  .phone-group { display:flex; gap:8px; align-items:center; } .phone-prefix { padding:9px 10px; border:1px solid #ccd3dd; border-radius:7px; font-size:13px; color:#555; background:#f8f9fb; flex-shrink:0; }
+  .btn { padding:9px 16px; border-radius:7px; border:1px solid #ccd3dd; background:#fff; cursor:pointer; font-size:13px; }
+  .btn.primary { background:var(--blue); color:#fff; border:none; } .btn:disabled { opacity:.55; cursor:default; } .btn.tiny { padding:5px 11px; font-size:12px; }
+  .btn-row { display:flex; gap:10px; justify-content:flex-end; margin-top:8px; }
+  .badge-mrn { background:#f0f9ff; color:#0284c7; border:1px solid #bae6fd; font-size:12px; font-weight:700; padding:6px 12px; border-radius:8px; height:fit-content; white-space:nowrap; }
+  .checks { display:grid; grid-template-columns:repeat(3,1fr); gap:8px 12px; margin:6px 0 4px; } .check-row { display:flex; align-items:center; gap:6px; font-size:13px; color:#374151; }
+  .status { font-size:13px; color:var(--muted); margin-top:8px; min-height:18px; }
+  .empty { color:var(--muted); font-size:13px; padding:22px 0; text-align:center; }
+  .agent-summary { font-size:14px; line-height:1.55; background:#f6fafe; border:1px solid #e3edf9; border-radius:8px; padding:14px 16px; }
+  .stage { margin-top:16px; } .stage h4 { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .stage h4 .num { width:18px; height:18px; border-radius:50%; background:var(--blue); color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; }
+  .insight { display:flex; gap:10px; padding:10px 0; border-bottom:1px solid #f0f1f4; font-size:13px; } .insight .sev { width:8px; height:8px; border-radius:50%; margin-top:5px; flex-shrink:0; background:var(--muted); }
+  .insight.info .sev { background:#2196F3; } .insight.watch .sev { background:#f5a623; } .insight.urgent .sev { background:#e02424; }
+  .insight b { display:block; margin-bottom:2px; } .insight span { color:var(--muted); }
+  .rec { font-size:13px; padding:9px 0; border-bottom:1px solid #f0f1f4; } .rec .why { color:var(--muted); font-size:12px; margin-top:2px; }
+  .action { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid #f0f1f4; font-size:13px; } .action.done .lbl { color:var(--muted); text-decoration:line-through; }
+  .tag { font-size:11px; padding:3px 9px; border-radius:10px; } .tag.demo { background:var(--yellow-bg); color:var(--yellow); } .tag.llm { background:var(--green-bg); color:var(--green); }
+  .log-item { font-size:12px; color:#374151; padding:8px 0; border-bottom:1px solid #f0f1f4; } .log-item time { color:var(--muted); }
+  .note-item { font-size:12px; padding:8px 0; border-bottom:1px solid #f0f1f4; white-space:pre-wrap; } .note-item .k { font-weight:700; color:var(--blue); text-transform:uppercase; font-size:10px; letter-spacing:.04em; }
+  .disclaimer { font-size:12px; color:var(--muted); margin-top:14px; }
+  .banner { display:flex; align-items:center; justify-content:space-between; background:#eaf3ff; border:1px solid #cfe4fb; border-radius:10px; padding:16px 20px; margin-bottom:20px; }
+  .banner .big { font-size:26px; font-weight:800; color:var(--blue-dark); } .banner .sub { font-size:13px; color:#5a6b80; margin-top:2px; }
+  table.sched { width:100%; border-collapse:collapse; font-size:13px; }
+  table.sched th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; padding:8px 10px; border-bottom:1px solid var(--border); }
+  table.sched td { padding:10px; border-bottom:1px solid #f0f1f4; vertical-align:middle; }
+  .plink { color:var(--blue-dark); font-weight:600; cursor:pointer; }
+  .chip { font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; white-space:nowrap; }
+  .chip.low { background:var(--green-bg); color:var(--green); } .chip.medium { background:var(--yellow-bg); color:var(--yellow); } .chip.high { background:var(--red-bg); color:var(--red); }
+  .decide { display:flex; gap:6px; }
+  .b-appr { border-color:var(--green); color:var(--green); } .b-appr:hover { background:var(--green-bg); } .b-appr.on { background:var(--green); color:#fff; }
+  .b-hold { border-color:var(--yellow); color:var(--yellow); } .b-hold:hover { background:var(--yellow-bg); } .b-hold.on { background:var(--yellow); color:#fff; }
+  .b-rej { border-color:var(--red); color:var(--red); } .b-rej:hover { background:var(--red-bg); } .b-rej.on { background:var(--red); color:#fff; }
+  .decided-badge { font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; }
+  .decided-badge.approve { background:var(--green-bg); color:var(--green); } .decided-badge.hold { background:var(--yellow-bg); color:var(--yellow); } .decided-badge.reject { background:var(--red-bg); color:var(--red); }
+  .day-group { margin-bottom:22px; } .day-group h3 { font-size:14px; color:var(--blue-dark); margin-bottom:8px; }
+  .thumb-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:10px; margin-top:12px; }
+  .thumb { position:relative; border:2px solid var(--border); border-radius:8px; overflow:hidden; cursor:pointer; aspect-ratio:1; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; } .thumb.sel { border-color:var(--blue); }
+  .thumb .tick { position:absolute; top:6px; left:6px; width:20px; height:20px; border-radius:50%; background:#fff; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--blue); }
+  .thumb.sel .tick { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .result-card { background:#fff; border:1px solid var(--border); border-radius:10px; padding:16px; margin-top:14px; display:grid; grid-template-columns:130px 1fr; gap:16px; }
+  .result-card img { width:130px; height:130px; object-fit:cover; border-radius:8px; border:1px solid var(--border); }
+  @media (max-width:700px){ .result-card { grid-template-columns:1fr; } .result-card img { width:100%; height:auto; } }
+  .soap { margin-top:12px; } .soap-block { margin-bottom:12px; }
+  .soap-block .lab { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--blue); margin-bottom:4px; }
+  .soap-block .body { font-size:13px; line-height:1.55; background:#f6fafe; border:1px solid #e3edf9; border-radius:8px; padding:10px 12px; white-space:pre-wrap; }
+  .used-note { font-size:12px; color:var(--green); background:var(--green-bg); border-radius:6px; padding:6px 10px; margin-top:8px; }
+
+  /* ---- printable report document ---- */
+  .report-actions { display:flex; gap:10px; margin-bottom:16px; }
+  .report-doc { background:#fff; border:1px solid var(--border); border-radius:10px; padding:38px 42px; max-width:820px; margin:0 auto; color:#111; }
+  .rpt-head { display:grid; grid-template-columns:auto 1fr auto; gap:18px; align-items:start; border-bottom:3px solid var(--blue); padding-bottom:16px; margin-bottom:22px; }
+  .rpt-brand { font-size:22px; font-weight:800; } .rpt-brand b { color:var(--blue); } .rpt-brand span { color:#f5a623; }
+  .rpt-clinic h2 { font-size:17px; margin:0 0 4px; color:var(--blue-dark); }
+  .rpt-clinic div { font-size:12px; color:#555; line-height:1.5; }
+  .rpt-meta { text-align:right; font-size:12px; color:#555; } .rpt-meta div { margin-top:4px; }
+  .rpt-title { font-size:19px; font-weight:700; text-align:center; letter-spacing:.02em; margin-bottom:20px; }
+  .rpt-patient { width:100%; border-collapse:collapse; margin-bottom:22px; font-size:13px; }
+  .rpt-patient td { padding:7px 10px; border:1px solid var(--border); }
+  .rpt-patient .k { background:#f6f8fb; font-weight:600; color:#444; width:14%; }
+  .rpt-patient .v { width:36%; }
+  .rpt-sec { margin-bottom:18px; page-break-inside:avoid; }
+  .rpt-lab { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--blue); border-bottom:1px solid var(--border); padding-bottom:5px; margin-bottom:8px; }
+  .rpt-body { font-size:13px; line-height:1.65; white-space:pre-wrap; }
+  .rpt-imgs { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+  @media (max-width:760px){ .rpt-imgs { grid-template-columns:1fr; } }
+  .rpt-imgs figure { margin:0; border:1px solid var(--border); border-radius:8px; padding:9px; }
+  .rpt-pair { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .rpt-pair .tile { text-align:center; }
+  .rpt-pair canvas, .rpt-pair img { width:100%; height:120px; display:block; object-fit:contain;
+                  background:#0f1115; border:1px solid var(--border); border-radius:6px; }
+  .rpt-pair .tile-lab { font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:#888;
+                  margin-top:4px; font-weight:700; }
+  .rpt-imgs figcaption { font-size:10.5px; color:#333; margin-top:7px; text-align:center; font-weight:600; line-height:1.35; }
+  .rpt-imgs figcaption .sub { display:block; font-weight:400; color:#777; font-size:9.5px; margin-top:1px; }
+  .rpt-legend { display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 12px; font-size:10.5px; }
+  .rpt-legend span { display:flex; align-items:center; gap:4px; color:#555; }
+  .rpt-legend i { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .rpt-foot { margin-top:34px; padding-top:18px; border-top:1px solid var(--border); }
+  .rpt-foot .sign { float:right; text-align:center; font-size:11px; color:#666; }
+  .rpt-foot .sign .line { width:180px; border-bottom:1px solid #444; margin-bottom:5px; height:34px; }
+  .rpt-foot .note { font-size:10.5px; color:#888; line-height:1.5; max-width:62%; }
+  @media print {
+    body { background:#fff; }
+    .sidebar, .topbar, .patient-bar, .no-print, .page-head { display:none !important; }
+    .content { padding:0 !important; overflow:visible !important; }
+    #app { display:block !important; }
+    .page { display:none !important; } .page.active { display:block !important; }
+    #reports-list-view { display:none !important; }
+    .report-doc { border:none; border-radius:0; padding:0; max-width:100%; }
+    .rpt-imgs { grid-template-columns:repeat(2,1fr) !important; gap:8px; }
+    .rpt-imgs canvas, .rpt-imgs img { height:95px !important; }
+    .rpt-sec { page-break-inside:avoid; }
+    @page { margin:16mm; }
+  }
+  /* Visit Pipeline */
+  .pl-run { border-left:4px solid var(--border); }
+  .pl-run.awaiting { border-left-color:#f5a623; } .pl-run.running { border-left-color:var(--blue); }
+  .pl-run.done { border-left-color:var(--green); } .pl-run.rejected, .pl-run.failed { border-left-color:var(--red); }
+  .pl-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  .pl-head small { color:var(--muted); font-size:12px; display:block; margin-top:3px; }
+  .pl-stages { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px; font-size:12px; }
+  .pl-stages span { padding:3px 10px; border-radius:12px; background:#f0f2f5; color:var(--muted); }
+  .pl-stages span.on { background:#fdf1de; color:var(--yellow); font-weight:700; }
+  .pl-stages span.ok { background:var(--green-bg); color:var(--green); }
+  .pl-run textarea { width:100%; box-sizing:border-box; min-height:58px; padding:8px 10px; border:1px solid #ccd3dd; border-radius:7px; font:inherit; font-size:13px; resize:vertical; }
+  .pl-run .field label { font-size:12px; color:var(--muted); }
+  /* Clinic Copilot */
+  .cp-log { display:flex; flex-direction:column; gap:14px; min-height:260px; max-height:58vh; overflow-y:auto; padding:4px 2px 8px; }
+  .cp-msg { max-width:82%; font-size:14px; line-height:1.55; padding:11px 15px; border-radius:12px; }
+  .cp-msg.user { align-self:flex-end; background:var(--blue); color:#fff; border-bottom-right-radius:4px; white-space:pre-wrap; }
+  .cp-msg.bot { align-self:flex-start; background:#f6fafe; border:1px solid #e3edf9; border-bottom-left-radius:4px; }
+  .cp-msg.bot.err { background:var(--red-bg); border-color:#f5c2c2; }
+  .cp-meta { font-size:11px; color:var(--muted); margin-top:8px; }
+  .cp-trace { margin-top:8px; font-size:12px; } .cp-trace summary { cursor:pointer; color:var(--muted); }
+  .cp-step { margin:6px 0 0; padding:6px 8px; background:#fff; border:1px solid var(--border); border-radius:6px; font-family:ui-monospace,Consolas,monospace; font-size:11px; word-break:break-word; }
+  .cp-step.fail { border-color:#f5c2c2; } .cp-step b { color:var(--blue-dark); }
+  .cp-actions { margin-top:10px; border-top:1px dashed #d6e2f0; padding-top:4px; }
+  .cp-suggest { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .cp-suggest button { font-size:12px; padding:6px 12px; border-radius:16px; border:1px solid #cfe0f5; background:#f4f9ff; color:var(--blue-dark); cursor:pointer; }
+  .cp-input { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; } .cp-input textarea { flex:1 1 260px; min-width:0; resize:none; height:44px; padding:11px 12px; border:1px solid #ccd3dd; border-radius:8px; font:inherit; font-size:14px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="login-avatar">SD</div>
+    <div class="login-brand">Visukhi Dental Clinic</div>
+    <div class="login-brand"><b>denta</b><span>VIS</span></div>
+    <div class="login-tagline">AI-Powered Dental Imaging &amp; Reporting</div>
+    <div class="field"><label>Username or Email</label><input id="login-username" value="admin"></div>
+    <div class="field"><label>Password</label><input type="password" id="login-password" value="••••••••"></div>
+    <div class="login-remember"><input type="checkbox" checked> Remember me</div>
+    <button class="btn primary" style="width:100%" id="btn-login">Login</button>
+    <div class="login-footer">Don't have an account? <b>Contact administrator</b></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="sidebar">
+    <div class="brand"><b>denta</b><span>VIS</span></div>
+    <div class="nav-item active" data-page="dashboard">📊 Dashboard</div>
+    <div class="nav-zone">Front desk</div>
+    <div class="nav-item" data-page="appointments">📅 Appointments</div>
+    <div class="nav-zone">Clinical</div>
+    <div class="nav-item" data-page="scan">🎯 Scan</div>
+    <div class="nav-item" data-page="report">📝 Create Report</div>
+    <div class="nav-item" data-page="pipeline">🔁 Visit Pipeline</div>
+    <div class="nav-item" data-page="copilot">🤖 Copilot</div>
+    <div class="nav-zone">Records</div>
+    <div class="nav-item" data-page="reports">📄 Reports</div>
+    <div class="nav-zone">Admin</div>
+    <div class="nav-item" data-page="patients">👤 Patients</div>
+    <div class="nav-item" data-page="users">👥 Users</div>
+    <div class="nav-item" data-page="settings">⚙️ Settings</div>
+    <div class="sidebar-footer">Visukhi Dental Clinic</div>
+  </div>
+
+  <div class="main-col">
+    <div class="topbar">
+      <h1 id="topbar-title">Dashboard</h1>
+      <div class="topbar-right">
+        <div class="pill"><span class="dot-green"></span> Agents online</div>
+        <div class="avatar">A</div>
+        <div class="who"><b>Administrator</b><small>System Administrator</small></div>
+      </div>
+    </div>
+    <div class="patient-bar" id="patient-bar">
+      <span class="none">No patient selected — open one from Appointments or Patients.</span>
+    </div>
+
+    <div class="content">
+
+      <!-- Dashboard -->
+      <div class="page active" id="page-dashboard">
+        <div class="stats">
+          <div class="card stat c1"><div class="label">Patients</div><b>12</b><div class="caption">On the roster</div></div>
+          <div class="card stat c2"><div class="label">Agents live</div><b>4</b><div class="caption">Patient · Scheduling · Imaging · Clinical</div></div>
+          <div class="card stat c3"><div class="label">Today's appts</div><b id="dash-appts">—</b><div class="caption">Scored for no-show risk</div></div>
+          <div class="card stat c4"><div class="label">Models</div><b>Local</b><div class="caption">Ollama + your vision .pt</div></div>
+        </div>
+        <div class="card"><b>How the day flows</b><p style="color:var(--muted);font-size:13px">Front desk triages <b>Appointments</b> for no-show risk each morning. As each patient arrives, open their chart — the <b>Patient workspace</b> walks Summary → Scan → Note. Imaging findings flow into the note; everything you approve is written to the record.</p></div>
+      </div>
+
+      <!-- Appointments (Today + Finalized inner tabs) -->
+      <div class="page" id="page-appointments">
+        <div class="page-head"><h2>Front desk — Scheduling</h2><p>Score today's schedule for no-show risk, decide reminders, and record who actually showed.</p></div>
+        <div class="subtabs">
+          <button class="subtab active" data-appt="today">Today</button>
+          <button class="subtab" data-appt="finalized">Finalized</button>
+        </div>
+        <div id="appt-today">
+          <div class="banner">
+            <div><div class="big" id="expected-big">—</div><div class="sub" id="expected-sub">Loading…</div></div>
+            <div style="display:flex;gap:8px"><button class="btn" id="btn-new-appt">+ New Appointment</button><button class="btn" id="btn-refresh-sched">Re-run</button></div>
+          </div>
+          <div id="appt-form" class="card" style="display:none;background:#f8fafc">
+            <div class="section-label">Book appointment</div>
+            <div class="grid2">
+              <div class="field"><label>Patient</label><select id="af-patient"><option value="">Loading…</option></select></div>
+              <div class="field"><label>Type</label><select id="af-type"><option>checkup</option><option>cleaning</option><option>filling</option><option>root_canal</option><option>extraction</option><option>emergency</option><option>followup</option></select></div>
+            </div>
+            <div class="grid2">
+              <div class="field"><label>Date</label><input id="af-date" type="date"></div>
+              <div class="field"><label>Time</label><input id="af-time" type="time" value="10:00"></div>
+            </div>
+            <div class="btn-row"><button class="btn" id="btn-cancel-appt">Cancel</button><button class="btn primary" id="btn-save-appt">Book</button></div>
+            <div class="status" id="af-status"></div>
+          </div>
+          <div class="card card-strip">
+            <div class="section-label">Today's schedule &nbsp;·&nbsp; <span style="color:var(--green)">green ≥70%</span> · <span style="color:var(--yellow)">yellow 30–70%</span> · <span style="color:var(--red)">red &lt;30%</span> attend &nbsp;·&nbsp; click a name to open the chart</div>
+            <table class="sched"><thead><tr><th>Time</th><th>Patient</th><th>Type</th><th>Attend likelihood</th><th>Decision</th></tr></thead>
+              <tbody id="sched-rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
+              <div class="disclaimer" style="margin:0">Risk from the logistic-regression model. Set rows, then Submit — nothing sends automatically.</div>
+              <button class="btn primary" id="btn-submit-sched" disabled>Submit decisions</button>
+            </div>
+          </div>
+        </div>
+        <div id="appt-finalized" style="display:none">
+          <div class="card"><div id="finalized-body"><div class="empty">Loading…</div></div></div>
+        </div>
+      </div>
+
+      <!-- Visit Pipeline: event-driven scan -> SOAP -> report with review pauses -->
+      <div class="page" id="page-pipeline">
+        <div class="page-head"><h2>Visit Pipeline</h2><p>Approving a scan finding starts this automatically: the Clinical agent drafts the SOAP note, the Report agent drafts the report, and the pipeline pauses for your review at each step. Paused runs survive a server restart.</p></div>
+        <div class="card" style="background:#f8fafc">
+          <div class="section-label">Start manually</div>
+          <div class="grid2">
+            <div class="field"><label>Patient</label><select id="pl-patient"><option value="">Loading…</option></select></div>
+            <div class="field"><label>Chief complaint (optional)</label><input id="pl-complaint" placeholder="e.g. Pain on lower left molar"></div>
+          </div>
+          <div class="btn-row"><button class="btn primary" id="pl-start">Start pipeline</button></div>
+          <div class="status" id="pl-status"></div>
+        </div>
+        <div id="pl-runs"><div class="empty">Loading…</div></div>
+      </div>
+
+      <!-- Clinic Copilot: tool-calling agent -->
+      <div class="page" id="page-copilot">
+        <div class="page-head"><h2>Clinic Copilot</h2><p>Ask about patients, records or the schedule. The agent decides which lookups to run; anything it wants to change appears as an action for you to approve.</p></div>
+        <div class="card card-strip">
+          <div class="cp-suggest" id="cp-suggest">
+            <button>Who is at high risk of missing their appointment today?</button>
+            <button>Summarise the patient with the most visits, including allergies.</button>
+            <button>Which patients have imaging findings that need follow-up?</button>
+          </div>
+          <div class="cp-log" id="cp-log"><div class="empty">Ask a question to start. Answers come from your local model and clinic database only.</div></div>
+          <div class="cp-input">
+            <textarea id="cp-text" placeholder="e.g. Does anyone on tomorrow's schedule have a penicillin allergy?"></textarea>
+            <button class="btn primary" id="cp-send">Send</button>
+            <button class="btn" id="cp-clear" title="Start a new conversation">New chat</button>
+          </div>
+          <div class="disclaimer" style="margin-top:10px">Read-only lookups run automatically. Notes, follow-up flags and patient messages are only proposed; nothing is written or sent until you approve it.</div>
+        </div>
+      </div>
+
+      <!-- Scan: approved queue -> image collection -->
+      <div class="page" id="page-scan">
+        <div class="page-head"><h2>Scan — image collection</h2><p>Approved patients from today's schedule. Pick one and upload their images; approve findings to attach them.</p></div>
+        <div class="grid-main">
+          <div>
+            <div class="card"><div class="section-label">Approved today</div><div id="scan-queue"><div class="empty" style="padding:14px 0">Loading…</div></div></div>
+            <div class="card card-strip" id="scan-panel" style="display:none">
+              <div class="section-label">Screen images — <span id="scan-active"></span></div>
+              <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
+                <div style="flex:1; min-width:260px;">
+                  <div style="font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px;">PHOTOS</div>
+                  <input type="file" id="scan-file" accept="image/*" multiple>
+                  <div id="scan-grid" class="thumb-grid"></div>
+                  <div style="display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap;">
+                    <button class="btn" id="btn-selall">Select all</button>
+                    <button class="btn primary" id="btn-analyze" disabled>Analyze selected</button>
+                    <span id="scan-status" style="color:var(--muted); font-size:13px"></span>
+                  </div>
+                </div>
+                <div style="flex:1; min-width:260px; border-left:1px solid var(--border); padding-left:20px;">
+                  <div style="font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px;">VIDEO SWEEP</div>
+                  <input type="file" id="video-file" accept="video/*">
+                  <div id="video-preview" style="margin-top:8px"></div>
+                  <div style="display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap;">
+                    <button class="btn primary" id="btn-analyze-video" disabled>Analyze video</button>
+                    <span id="video-status" style="color:var(--muted); font-size:13px"></span>
+                  </div>
+                  <div id="video-results"></div>
+                </div>
+              </div>
+              <div id="scan-results"></div>
+              <div class="disclaimer">Approve a finding to attach it — it flows into the report.</div>
+              <button class="btn primary" id="btn-to-report" style="margin-top:12px">Continue to report →</button>
+            </div>
+          </div>
+          <div class="card"><div class="section-label">Activity</div><div id="log"><div class="empty" style="padding:14px 0">Nothing yet.</div></div></div>
+        </div>
+      </div>
+
+      <!-- Create Report: imaging + clinical -> AI summary -->
+      <div class="page" id="page-report">
+        <div class="page-head"><h2>Create Report</h2><p>Combine imaging findings and clinical findings into a report with a short AI summary, then finalize.</p></div>
+        <div id="report-nopatient" class="card"><div class="empty">No patient selected. Pick one from Scan or Appointments.</div></div>
+        <div id="report-panel" style="display:none">
+          <div class="grid-main">
+            <div class="card card-strip">
+              <div class="section-label">Report — <span id="report-active"></span></div>
+              <div class="field"><label>Imaging findings (from Scan)</label><textarea id="rep-imaging" rows="2" readonly placeholder="No imaging attached yet"></textarea></div>
+              <div class="field"><label>Clinical findings</label><textarea id="rep-clinical" rows="3" placeholder="Examination, diagnosis, treatment done today…"></textarea></div>
+              <button class="btn primary" id="btn-gen-report">Generate report</button>
+              <div id="report-result"></div>
+            </div>
+            <div class="card"><div class="section-label">Record</div><div id="record-notes"><div class="empty" style="padding:14px 0">No saved notes yet.</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reports: finalized list + view -->
+      <div class="page" id="page-reports">
+        <div class="page-head"><h2>Reports</h2><p>Finalized reports. Click one to view.</p></div>
+        <div id="reports-list-view"><div class="card"><div id="reports-list"><div class="empty">Loading…</div></div></div></div>
+        <div id="reports-detail-view" style="display:none">
+          <button class="btn" id="btn-back-reports" style="margin-bottom:14px">← Back to reports</button>
+          <div class="card card-strip" id="report-detail"></div>
+        </div>
+      </div>
+      </div>
+
+      <!-- Patients list (admin) -->
+      <div class="page" id="page-patients">
+        <div class="page-head"><h2>Patients</h2><p>The clinic roster. Add, edit, or open a chart to start a visit.</p></div>
+        <div class="card">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+            <input id="search-patients" placeholder="Filter by name…" oninput="renderPatientList()" style="flex:1">
+            <button class="btn primary" id="btn-new-patient">+ New Patient</button>
+          </div>
+          <div id="patient-form" class="card" style="display:none;background:#f8fafc">
+            <div class="section-label" id="patient-form-title">New patient</div>
+            <div class="grid2">
+              <div class="field"><label>Name *</label><input id="pf-name"></div>
+              <div class="field"><label>Age</label><input id="pf-age" type="number"></div>
+            </div>
+            <div class="grid2">
+              <div class="field"><label>Sex</label><select id="pf-sex"><option value="">—</option><option>M</option><option>F</option><option>Other</option></select></div>
+              <div class="field"><label>Phone</label><input id="pf-phone" placeholder="+91 …"></div>
+            </div>
+            <div class="grid2">
+              <div class="field"><label>Allergies</label><input id="pf-allergies" placeholder="e.g. Penicillin"></div>
+              <div class="field"><label>Conditions</label><input id="pf-conditions" placeholder="e.g. Type 2 diabetes"></div>
+            </div>
+            <div class="btn-row"><button class="btn" id="btn-cancel-patient">Cancel</button><button class="btn primary" id="btn-save-patient">Save</button></div>
+            <div class="status" id="pf-status"></div>
+          </div>
+          <table class="sched"><thead><tr><th>Name</th><th>MRN</th><th>Age/Sex</th><th></th></tr></thead>
+            <tbody id="patients-rows"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <!-- Users (real staff management) -->
+      <div class="page" id="page-users">
+        <div class="page-head"><h2>Staff accounts</h2><p>Manage who can log in. Default password: <b>admin123</b> — change it immediately.</p></div>
+        <div class="card">
+          <div id="staff-form" style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;display:none">
+            <div class="section-label">Add staff member</div>
+            <div class="grid2">
+              <div class="field"><label>Username</label><input id="sf-username" placeholder="e.g. drsmith"></div>
+              <div class="field"><label>Display name</label><input id="sf-name" placeholder="e.g. Dr. Smith"></div>
+            </div>
+            <div class="field"><label>Password</label><input id="sf-password" type="password" placeholder="min 8 characters"></div>
+            <div class="btn-row"><button class="btn" id="btn-cancel-staff">Cancel</button><button class="btn primary" id="btn-save-staff">Add</button></div>
+            <div class="status" id="sf-status"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div class="section-label" style="margin:0">Active staff</div>
+            <button class="btn primary tiny" id="btn-add-staff">+ Add staff</button>
+          </div>
+          <table class="sched"><thead><tr><th>Username</th><th>Display name</th><th>Since</th><th></th></tr></thead>
+            <tbody id="staff-rows"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <!-- Settings (static clinic info + live ML panel) -->
+      <div class="page" id="page-settings">
+        <div class="page-head"><h2>Clinic Settings</h2></div>
+        <div class="card">
+          <div class="section-label">Basic information</div>
+          <div class="grid2">
+            <div class="field"><label>Clinic Name</label><input value="Visukhi Dental Clinic"></div>
+            <div class="field"><label>Registration Number</label><input placeholder="CLINIC-2024-001"></div>
+          </div>
+          <div class="btn-row"><button class="btn">Cancel</button><button class="btn primary">Save Changes</button></div>
+        </div>
+        <div class="card card-strip" style="border-top-color:#8e5ce6">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div class="section-label" style="margin:0">No-show model — retraining pipeline</div>
+            <button class="btn primary tiny" id="btn-retrain">Run now</button>
+          </div>
+          <div id="retrain-status" style="font-size:13px;color:var(--muted);margin-bottom:14px">Loading…</div>
+          <div class="section-label">Model registry</div>
+          <table class="sched"><thead><tr><th>Version</th><th>AUC</th><th>Trained on (rows)</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody id="registry-rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table>
+          <div class="section-label" style="margin-top:18px">Retrain history</div>
+          <table class="sched"><thead><tr><th>When</th><th>Rows</th><th>Old AUC</th><th>New AUC</th><th>Result</th><th>Reason</th></tr></thead>
+            <tbody id="retrain-rows"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody></table>
+          <div class="disclaimer" style="margin-top:10px">Retraining runs automatically every Sunday midnight. It only promotes a new model if its AUC ≥ current AUC − 0.02. All runs are logged here regardless of outcome.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+
+// ============================================================
+// dentaVIS — unified script
+// All DOM bindings happen inside init(), called after login.
+// Nothing touches the DOM until the user is authenticated.
+// ============================================================
+
+const $ = s => document.querySelector(s);
+const esc = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const bandLabel = b => b==='low'?'likely':b==='medium'?'uncertain':'unlikely';
+const VERDICT_BAND = {"Disease Detected":"high","Abnormal — needs review":"medium","Healthy — no findings":"low","Non-dental — rejected":"medium"};
+const TITLES = {dashboard:'Dashboard',appointments:'Appointments',scan:'Scan',report:'Create Report',pipeline:'Visit Pipeline',copilot:'Clinic Copilot',reports:'Reports',patients:'Patients',users:'Users',settings:'Settings'};
+
+// ---- auth state ----
+let TOKEN = '', DISPLAY_NAME = 'Staff';
+try { TOKEN = localStorage.getItem('dv_token')||''; DISPLAY_NAME = localStorage.getItem('dv_name')||'Staff'; } catch(e){}
+
+const api = async (p, o={}) => {
+  const h = {'Content-Type':'application/json', ...(o.headers||{})};
+  if(TOKEN) h['Authorization'] = 'Bearer '+TOKEN;
+  try {
+    const r = await fetch(p, {...o, headers:h});
+    if(r.status === 401){ logout(); return {}; }
+    const txt = await r.text();
+    return txt ? JSON.parse(txt) : {};
+  } catch(e){ console.error('api error:', p, e); return {}; }
+};
+const apiForm = async (p, body) => {
+  const h = {}; if(TOKEN) h['Authorization'] = 'Bearer '+TOKEN;
+  try {
+    const r = await fetch(p, {method:'POST', body, headers:h});
+    if(r.status === 401){ logout(); return {}; }
+    const txt = await r.text();
+    return txt ? JSON.parse(txt) : {};
+  } catch(e){ return {}; }
+};
+
+function logout(){
+  try{ localStorage.removeItem('dv_token'); localStorage.removeItem('dv_name'); }catch(e){}
+  TOKEN=''; location.reload();
+}
+
+// ---- login ----
+async function doLogin(){
+  const u = ($('#login-username')||{value:''}).value.trim();
+  const pw = ($('#login-password')||{value:''}).value;
+  if(!u||!pw){ alert('Enter username and password.'); return; }
+  const btn = $('#btn-login'); if(btn){ btn.disabled=true; btn.textContent='Logging in…'; }
+  try {
+    const r = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:pw})});
+    if(!r.ok){ const e=await r.json().catch(()=>({detail:'Login failed'})); alert(e.detail||'Login failed'); if(btn){btn.disabled=false;btn.textContent='Login';} return; }
+    const d = await r.json();
+    TOKEN = d.token; DISPLAY_NAME = d.display_name;
+    try{ localStorage.setItem('dv_token',TOKEN); localStorage.setItem('dv_name',DISPLAY_NAME); }catch(e){}
+    showApp();
+  } catch(e){ alert('Could not reach the server. Is uvicorn running?'); }
+  if(btn){ btn.disabled=false; btn.textContent='Login'; }
+}
+
+function showApp(){
+  const lp = $('#login-page'); if(lp) lp.style.display='none';
+  const app = $('#app'); if(app) app.classList.add('active');
+  document.querySelectorAll('.who b').forEach(el=>el.textContent=DISPLAY_NAME);
+  init();
+  showPage('dashboard');
+}
+
+// ---- called once after login — safe to bind everything ----
+function init(){
+  // nav
+  document.querySelectorAll('.nav-item').forEach(n=>{ n.onclick=()=>showPage(n.dataset.page); });
+  // appointments
+  document.querySelectorAll('[data-appt]').forEach(b=>{ b.onclick=()=>apptTab(b.dataset.appt); });
+  const rr=$('#btn-refresh-sched'); if(rr) rr.onclick=loadScheduling;
+  const ss=$('#btn-submit-sched'); if(ss) ss.onclick=submitDecisions;
+  const na=$('#btn-new-appt'); if(na) na.onclick=openNewAppt;
+  const ca=$('#btn-cancel-appt'); if(ca) ca.onclick=()=>{ const f=$('#appt-form'); if(f) f.style.display='none'; };
+  const sa=$('#btn-save-appt'); if(sa) sa.onclick=saveAppt;
+  // scan
+  const sf=$('#scan-file'); if(sf) sf.addEventListener('change',onScanFileChange);
+  const sel=$('#btn-selall'); if(sel) sel.onclick=()=>{ const all=SCAN_FILES.length&&SCAN_FILES.every(s=>s.selected); SCAN_FILES.forEach(s=>s.selected=!all); renderGrid(); };
+  const an=$('#btn-analyze'); if(an) an.onclick=analyzeScan;
+  const tr=$('#btn-to-report'); if(tr) tr.onclick=()=>showPage('report');
+  // scan — video
+  const vf=$('#video-file'); if(vf) vf.addEventListener('change',onVideoFileChange);
+  const av=$('#btn-analyze-video'); if(av) av.onclick=analyzeVideo;
+  // report
+  const gr=$('#btn-gen-report'); if(gr) gr.onclick=genReport;
+  // patients
+  const np=$('#btn-new-patient'); if(np) np.onclick=()=>{ EDIT_ID=null; if($('#patient-form-title')) $('#patient-form-title').textContent='New patient'; fillPatientForm(null); showPatientForm(true); };
+  const cp=$('#btn-cancel-patient'); if(cp) cp.onclick=()=>showPatientForm(false);
+  const sp=$('#btn-save-patient'); if(sp) sp.onclick=savePatient;
+  const si=$('#search-patients'); if(si) si.oninput=renderPatientList;
+  // staff
+  const as=$('#btn-add-staff'); if(as) as.onclick=()=>{ const f=$('#staff-form'); if(f) f.style.display='block'; if($('#sf-status')) $('#sf-status').textContent=''; };
+  const cs=$('#btn-cancel-staff'); if(cs) cs.onclick=()=>{ const f=$('#staff-form'); if(f) f.style.display='none'; };
+  const ss2=$('#btn-save-staff'); if(ss2) ss2.onclick=saveStaff;
+  // retrain
+  const rt=$('#btn-retrain'); if(rt) rt.onclick=runRetrain;
+  // visit pipeline
+  const ps=$('#pl-start'); if(ps) ps.onclick=startPipeline;
+  // copilot
+  const cs2=$('#cp-send'); if(cs2) cs2.onclick=()=>copilotSend();
+  const ct=$('#cp-text'); if(ct) ct.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); copilotSend(); } };
+  const cc=$('#cp-clear'); if(cc) cc.onclick=copilotClear;
+  document.querySelectorAll('#cp-suggest button').forEach(b=>{ b.onclick=()=>copilotSend(b.textContent); });
+}
+
+// ---- navigation ----
+let ACTIVE = null;
+function renderPatientBar(){
+  const bar=$('#patient-bar'); if(!bar) return;
+  bar.innerHTML = ACTIVE
+    ? `Active patient: <b>${esc(ACTIVE.name)}</b> · ${esc(ACTIVE.mrn||'')} <a onclick="showPage('patients')" style="cursor:pointer;color:var(--blue)">change</a>`
+    : '<span class="none">No patient selected — open one from Appointments or Patients.</span>';
+}
+async function openChart(id){
+  const p = await api('/api/patients/'+id);
+  if(!p||!p.id) return;
+  // Land on Report, not Scan — Report is the page that actually renders the
+  // patient's saved notes + imaging context via loadRecord(). Scan is an
+  // upload screen; opening it shows nothing of the patient's history.
+  ACTIVE={id:p.id,name:p.name,mrn:p.mrn}; renderPatientBar(); showPage('report');
+}
+
+const LOADERS={pipeline:loadPipeline,dashboard:loadDash,appointments:()=>apptTab('today'),scan:loadScan,report:loadReport,reports:loadReportsList,patients:loadPatientList,settings:loadMLDashboard,users:loadStaff};
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pg=document.getElementById('page-'+id); if(pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.page===id));
+  const t=$('#topbar-title'); if(t) t.textContent=TITLES[id]||'';
+  (LOADERS[id]||function(){})();
+}
+
+async function loadDash(){
+  try{ const d=await api('/api/scheduling/today'); const el=$('#dash-appts'); if(el) el.textContent=(d.expected&&d.expected.n)||'—'; }catch(e){}
+}
+
+// ---- Appointments ----
+let SCHED=[];
+function apptTab(which){
+  document.querySelectorAll('[data-appt]').forEach(b=>b.classList.toggle('active',b.dataset.appt===which));
+  const td=$('#appt-today'),fi=$('#appt-finalized');
+  if(td) td.style.display=which==='today'?'block':'none';
+  if(fi) fi.style.display=which==='finalized'?'block':'none';
+  if(which==='today') loadScheduling(); else loadFinalized();
+}
+async function loadScheduling(){
+  const sub=$('#expected-sub'),rows=$('#sched-rows');
+  if(sub) sub.textContent='Scoring today\u2019s schedule…';
+  if(rows) rows.innerHTML='<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  const d=await api('/api/scheduling/today');
+  if(!d||!d.predictions){ if(sub) sub.textContent='Could not reach the scheduling agent.'; return; }
+  SCHED=d.predictions||[]; const e=d.expected||{};
+  const big=$('#expected-big'); if(big) big.textContent=`~${e.attend_mean??'?'} of ${e.n??'?'}`;
+  const dec=SCHED.filter(p=>p.decided).length;
+  if(sub) sub.textContent=`patients expected today (range ${e.low??'?'}\u2013${e.high??'?'}). ${dec} of ${e.n??'?'} decided.`;
+  renderSched();
+}
+function renderSched(){
+  const rows=SCHED.slice().sort((a,b)=>a.hour-b.hour);
+  const el=$('#sched-rows'); if(!el) return;
+  el.innerHTML=rows.length?rows.map(p=>{
+    const chip=p.is_new
+      ? `<span class="chip low">First time</span>`
+      : `<span class="chip ${p.band}">${Math.round(p.p_attend*100)}% · ${bandLabel(p.band)}</span>`;
+    let cell;
+    if(p.decided){ cell=`<span class="decided-badge ${p._decision}">${p._decision}</span>`; }
+    else { const on=d=>p._pending===d?' on':'';
+      cell=`<div class="decide"><button class="btn tiny b-appr${on('approve')}" data-id="${p.id}" data-d="approve">Approve</button><button class="btn tiny b-hold${on('hold')}" data-id="${p.id}" data-d="hold">Hold</button><button class="btn tiny b-rej${on('reject')}" data-id="${p.id}" data-d="reject">Reject</button></div>`; }
+    return `<tr><td>${p.hour}:00</td><td><span class="plink" onclick="openChart(${p.patient_id})">${esc(p.patient)}</span></td><td>${esc(p.type)}</td><td>${chip}</td><td>${cell}</td></tr>`;
+  }).join(''):'<tr><td colspan="5" class="empty">No appointments today.</td></tr>';
+  el.querySelectorAll('.decide .btn').forEach(b=>b.addEventListener('click',()=>setPending(b)));
+  updateSubmit();
+}
+function setPending(btn){ const p=SCHED.find(x=>x.id===Number(btn.dataset.id)); if(!p||p.decided) return; p._pending=(p._pending===btn.dataset.d)?null:btn.dataset.d; renderSched(); }
+function updateSubmit(){ const n=SCHED.filter(p=>!p.decided&&p._pending).length; const b=$('#btn-submit-sched'); if(!b) return; b.disabled=n===0; b.textContent=n?`Submit ${n} decision${n>1?'s':''}`:'Submit decisions'; }
+async function submitDecisions(){
+  const pend=SCHED.filter(p=>!p.decided&&p._pending); if(!pend.length) return;
+  const b=$('#btn-submit-sched'); if(b){b.disabled=true;b.textContent='Submitting…';}
+  await api('/api/scheduling/decisions',{method:'POST',body:JSON.stringify({decisions:pend.map(p=>({appt_id:p.id,patient:p.patient,appt_type:p.type,appt_hour:p.hour,p_attend:p.p_attend,decision:p._pending}))})});
+  pend.forEach(p=>{p.decided=true;p._decision=p._pending;p._pending=null;}); renderSched();
+  const done=SCHED.filter(x=>x.decided).length,sub=$('#expected-sub');
+  if(sub) sub.textContent=sub.textContent.replace(/\d+ of \d+ decided/,`${done} of ${SCHED.length} decided`);
+}
+async function loadFinalized(){
+  const fb=$('#finalized-body'); if(!fb) return;
+  fb.innerHTML='<div class="empty">Loading…</div>';
+  const rows=await api('/api/scheduling/finalized');
+  if(!rows||!rows.length){fb.innerHTML='<div class="empty">No decisions yet.</div>';return;}
+  const byDay={}; rows.forEach(r=>{(byDay[r.decided_on]=byDay[r.decided_on]||[]).push(r);});
+  fb.innerHTML=Object.keys(byDay).sort().reverse().map(day=>{
+    const items=byDay[day].sort((a,b)=>a.appt_hour-b.appt_hour).map(r=>{
+      let outcome;
+      if(r.attended===1) outcome='<span class="chip low">showed</span>';
+      else if(r.attended===0) outcome='<span class="chip high">no-show</span>';
+      else outcome=`<button class="btn tiny b-appr" onclick="markOutcome(${r.appt_id},1)">Showed</button> <button class="btn tiny b-rej" onclick="markOutcome(${r.appt_id},0)">No-show</button>`;
+      return `<tr><td>${r.appt_hour}:00</td><td>${esc(r.patient)}</td><td>${esc(r.appt_type)}</td><td><span class="decided-badge ${r.decision}">${r.decision}</span></td><td>${outcome}</td></tr>`;
+    }).join('');
+    const c=byDay[day].reduce((a,r)=>{a[r.decision]=(a[r.decision]||0)+1;return a;},{});
+    return `<div class="day-group"><h3>${day} &nbsp;·&nbsp; ${byDay[day].length} decided (${c.approve||0} approved, ${c.hold||0} held, ${c.reject||0} rejected)</h3><table class="sched"><thead><tr><th>Time</th><th>Patient</th><th>Type</th><th>Decision</th><th>Outcome</th></tr></thead><tbody>${items}</tbody></table></div>`;
+  }).join('');
+}
+async function markOutcome(appt_id,attended){ await api(`/api/appointments/${appt_id}/outcome`,{method:'POST',body:JSON.stringify({attended})}); loadFinalized(); }
+async function openNewAppt(){
+  const f=$('#appt-form'); if(f) f.style.display='block';
+  const s=$('#af-status'); if(s) s.textContent='';
+  const ps=await api('/api/patients');
+  const sel=$('#af-patient'); if(sel) sel.innerHTML=(ps||[]).map(p=>`<option value="${p.id}">${esc(p.name)} — ${esc(p.mrn)}</option>`).join('');
+  const d=$('#af-date'); if(d&&!d.value) d.value=new Date().toISOString().slice(0,10);
+}
+async function saveAppt(){
+  const pid=($('#af-patient')||{}).value; if(!pid) return;
+  const body={patient_id:Number(pid),appt_date:($('#af-date')||{}).value,appt_time:($('#af-time')||{}).value,appt_type:($('#af-type')||{}).value};
+  const b=$('#btn-save-appt'); if(b){b.disabled=true;b.textContent='Booking…';}
+  const r=await api('/api/appointments',{method:'POST',body:JSON.stringify(body)});
+  if(r&&r.id){const f=$('#appt-form');if(f)f.style.display='none';loadScheduling();}
+  else{const s=$('#af-status');if(s)s.textContent='Could not book.';}
+  if(b){b.disabled=false;b.textContent='Book';}
+}
+
+// ---- Scan ----
+let SCAN_FILES=[];
+let VIDEO_FILE=null;
+async function loadScan(){
+  loadLog();
+  const q=await api('/api/scheduling/approved-today');
+  const sq=$('#scan-queue'); if(!sq) return;
+  sq.innerHTML=(q&&q.length)
+    ?q.map(x=>`<div class="action"><span class="lbl">${x.appt_hour}:00 · ${esc(x.patient_name)} <span style="color:var(--muted)">(${esc(x.appt_type)})</span></span><button class="btn tiny primary" onclick="openScan(${x.patient_id})">Open</button></div>`).join('')
+    :'<div class="empty" style="padding:14px 0">No approved patients yet — approve some in Appointments.</div>';
+  if(ACTIVE) showScanPanel();
+}
+async function openScan(id){ const p=await api('/api/patients/'+id); if(!p||!p.id) return; ACTIVE={id:p.id,name:p.name,mrn:p.mrn}; renderPatientBar(); showScanPanel(); }
+function showScanPanel(){
+  const sp=$('#scan-panel'); if(sp) sp.style.display='block';
+  const sa=$('#scan-active'); if(sa) sa.textContent=ACTIVE?ACTIVE.name:'';
+  SCAN_FILES=[]; VIDEO_FILE=null;
+  ['scan-grid','scan-results','video-preview','video-results'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});
+  const ss=$('#scan-status'); if(ss) ss.textContent='';
+  const vs=$('#video-status'); if(vs) vs.textContent='';
+  const ba=$('#btn-analyze'); if(ba){ba.disabled=true;ba.textContent='Analyze selected';}
+  const bv=$('#btn-analyze-video'); if(bv){bv.disabled=true;bv.textContent='Analyze video';}
+}
+function onScanFileChange(e){
+  SCAN_FILES=[...e.target.files].map((f,i)=>({file:f,id:'s'+Date.now()+'_'+i,url:URL.createObjectURL(f),selected:true}));
+  const sr=$('#scan-results'); if(sr) sr.innerHTML='';
+  const ss=$('#scan-status'); if(ss) ss.textContent='';
+  renderGrid();
+}
+function renderGrid(){
+  const sg=$('#scan-grid'); if(!sg) return;
+  sg.innerHTML=SCAN_FILES.map(s=>`<div class="thumb ${s.selected?'sel':''}" data-id="${s.id}"><div class="tick">${s.selected?'✓':''}</div><img src="${s.url}"></div>`).join('');
+  sg.querySelectorAll('.thumb').forEach(t=>t.addEventListener('click',()=>{const s=SCAN_FILES.find(x=>x.id===t.dataset.id);if(s){s.selected=!s.selected;renderGrid();}}));
+  const n=SCAN_FILES.filter(s=>s.selected).length;const b=$('#btn-analyze');if(b){b.disabled=n===0;b.textContent=n?`Analyze selected (${n})`:'Analyze selected';}
+}
+async function analyzeScan(){
+  const sel=SCAN_FILES.filter(s=>s.selected);if(!sel.length||!ACTIVE)return;
+  const b=$('#btn-analyze'),ss=$('#scan-status');
+  if(b){b.disabled=true;b.textContent='Analyzing…';}if(ss)ss.textContent='Loading models & running batched inference…';
+  const fd=new FormData();sel.forEach(s=>fd.append('files',s.file));fd.append('patient_id',ACTIVE.id);
+  const data=await apiForm('/api/imaging/analyze_batch',fd);
+  if(data&&data.results){
+    renderScanResults(data.results,sel);
+    if(ss)ss.textContent=`Done — ${data.results.length} image(s).`;
+    // store images against the patient so the printed report can embed them
+    sel.forEach((s,i)=>{
+      const res=data.results[i]||{};
+      const rd=new FileReader();
+      rd.onload=()=>api('/api/scan-images',{method:'POST',body:JSON.stringify({
+        patient_id:ACTIVE.id, filename:s.file.name,
+        data_uri:rd.result, verdict:res.verdict||'',
+        detections:JSON.stringify(res.detections||[])})});
+      rd.readAsDataURL(s.file);
+    });
+  }
+  else{if(ss)ss.textContent=(data&&data.detail)||'Analysis failed or models not ready.';}
+  renderGrid();
+}
+function renderScanResults(results,sel){
+  const sr=$('#scan-results');if(!sr)return;
+  sr.innerHTML=results.map((r,i)=>{
+    const band=VERDICT_BAND[r.verdict]||'medium',url=sel[i]?sel[i].url:'';
+    const ins=(r.insights||[]).map(x=>`<div class="insight ${x.severity}"><span class="sev"></span><div><b>${esc(x.label)}</b><span>${esc(x.detail)}</span></div></div>`).join('')||'<div class="empty">No findings.</div>';
+    const act=(r.actions||[]).map(a=>`<div class="action" data-id="${a.id}"><span class="lbl">${esc(a.label)}</span><button class="btn primary tiny act-approve" data-id="${a.id}">Approve</button></div>`).join('')||'<div class="empty">No action.</div>';
+    return `<div class="result-card"><div><img src="${url}"><div style="margin-top:8px"><span class="chip ${band}">${esc(r.verdict)}</span></div><div style="color:var(--muted);font-size:11px;margin-top:4px">${esc(r.filename||'')} · P(dental)=${r.p_dental}</div></div><div><div class="agent-summary">${esc(r.summary)}</div><div class="stage"><h4><span class="num">1</span> Findings</h4>${ins}</div><div class="stage"><h4><span class="num">2</span> Actions</h4>${act}</div></div></div>`;
+  }).join('');
+  sr.querySelectorAll('.act-approve').forEach(b=>b.addEventListener('click',()=>approveGeneric(b)));
+}
+
+function onVideoFileChange(e){
+  VIDEO_FILE=e.target.files[0]||null;
+  const vp=$('#video-preview');
+  if(vp) vp.innerHTML=VIDEO_FILE?`<video src="${URL.createObjectURL(VIDEO_FILE)}" controls style="max-width:100%;max-height:170px;border-radius:8px;display:block"></video>`:'';
+  const b=$('#btn-analyze-video'); if(b) b.disabled=!VIDEO_FILE;
+  const vr=$('#video-results'); if(vr) vr.innerHTML='';
+  const vs=$('#video-status'); if(vs) vs.textContent='';
+}
+
+async function analyzeVideo(){
+  if(!VIDEO_FILE||!ACTIVE) return;
+  const b=$('#btn-analyze-video'),vs=$('#video-status');
+  if(b){b.disabled=true;b.textContent='Analyzing…';} if(vs) vs.textContent='Sampling frames & running inference — a video takes longer than a single photo…';
+  const fd=new FormData(); fd.append('file',VIDEO_FILE); fd.append('patient_id',ACTIVE.id);
+  const data=await apiForm('/api/imaging/analyze_video',fd);
+  renderVideoResults(data);
+  if(vs) vs.textContent=(data&&data.frames_sampled!=null)?`Done — ${data.dental_frames}/${data.frames_sampled} sampled frames were dental.`:((data&&data.detail)||'Analysis failed or models not ready.');
+  if(b){b.disabled=false;b.textContent='Analyze video';}
+}
+
+function renderVideoResults(r){
+  const vr=$('#video-results'); if(!vr) return;
+  if(!r||r.detail){ vr.innerHTML=`<div class="empty">${esc((r&&r.detail)||'Video analysis failed or models not ready.')}</div>`; return; }
+  const band=VERDICT_BAND[r.verdict]||'medium';
+  const conds=(r.conditions||[]).map(c=>`<div class="result-card"><div>${c.representative_image?`<img src="${c.representative_image}">`:''}<div style="margin-top:8px"><span class="chip ${band}">${esc(c.display)}</span></div><div style="color:var(--muted);font-size:11px;margin-top:4px">seen in ${c.frame_count}/${r.dental_frames} dental frames · peak ${Math.round(c.max_conf*100)}%</div></div></div>`).join('')||'';
+  const ins=(r.insights||[]).map(x=>`<div class="insight ${x.severity}"><span class="sev"></span><div><b>${esc(x.label)}</b><span>${esc(x.detail)}</span></div></div>`).join('')||'<div class="empty">No findings.</div>';
+  const act=(r.actions||[]).map(a=>`<div class="action" data-id="${a.id}"><span class="lbl">${esc(a.label)}</span><button class="btn primary tiny act-approve" data-id="${a.id}">Approve</button></div>`).join('')||'<div class="empty">No action.</div>';
+  vr.innerHTML=`<div class="agent-summary" style="margin-top:12px">${esc(r.summary)}</div>
+    <div style="color:var(--muted);font-size:12px;margin:6px 0">${r.dental_frames}/${r.frames_sampled} sampled frames were dental</div>
+    ${conds?`<div style="display:flex;flex-wrap:wrap;gap:10px">${conds}</div>`:''}
+    <div class="stage"><h4><span class="num">1</span> Findings</h4>${ins}</div>
+    <div class="stage"><h4><span class="num">2</span> Actions</h4>${act}</div>`;
+  vr.querySelectorAll('.act-approve').forEach(b=>b.addEventListener('click',()=>approveGeneric(b)));
+}
+
+// ---- Report ----
+async function loadReport(){
+  const np=$('#report-nopatient'),pp=$('#report-panel');
+  if(!ACTIVE){if(np)np.style.display='block';if(pp)pp.style.display='none';return;}
+  if(np)np.style.display='none';if(pp)pp.style.display='block';
+  const ra=$('#report-active');if(ra)ra.textContent=ACTIVE.name;
+  const rr=$('#report-result');if(rr)rr.innerHTML='';
+  const rc=$('#rep-clinical');if(rc)rc.value='';
+  loadRecord();
+  const ctx=await api('/api/patients/'+ACTIVE.id+'/context');
+  const ri=$('#rep-imaging');
+  if(ri){
+    ri.value=(ctx&&ctx.latest_imaging)||'No imaging attached yet';
+    const n=(ctx&&ctx.imaging_count)||0;
+    ri.rows = Math.min(Math.max(n,2),8);           // grow with the number of findings
+    const lab=ri.parentElement&&ri.parentElement.querySelector('label');
+    if(lab) lab.textContent = n ? `Imaging findings from Scan (${n} image${n>1?'s':''})` : 'Imaging findings (from Scan)';
+  }
+}
+async function genReport(){
+  if(!ACTIVE)return;
+  const b=$('#btn-gen-report'),rr=$('#report-result');
+  if(b){b.disabled=true;b.textContent='Generating…';}if(rr)rr.innerHTML='<div class="empty">Writing summary…</div>';
+  const rc=$('#rep-clinical');
+  const r=await api('/api/reports/generate',{method:'POST',body:JSON.stringify({patient_id:ACTIVE.id,clinical:(rc||{}).value||''})});
+  if(!r||!r.ai_summary){if(rr)rr.innerHTML='<div class="empty">Could not reach the report agent.</div>';if(b){b.disabled=false;b.textContent='Generate report';}return;}
+  const tag=r.source==='llm'?'<span class="tag llm">Local model</span>':'<span class="tag demo">Demo (offline)</span>';
+  if(rr)rr.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px"><div class="section-label" style="margin:0">AI summary</div>${tag}</div>
+    <div class="agent-summary">${esc(r.ai_summary)}</div>${repGrounding(r.unsupported)}
+    <div class="btn-row"><button class="btn primary" id="btn-finalize-report" data-id="${r.report_id}">Finalize report</button></div>
+    <div class="disclaimer">Review the summary; finalizing files it under Reports.</div>`;
+  const fr=$('#btn-finalize-report');if(fr)fr.onclick=()=>finalizeReport(r.report_id);
+  if(b){b.disabled=false;b.textContent='Regenerate';}
+}
+function repGrounding(u){
+  u=u||[];
+  return u.length?`<div style="margin-top:10px;background:var(--yellow-bg);color:var(--yellow);padding:10px 12px;border-radius:7px;font-size:12.5px"><b>⚠ Grounding check: ${u.length} finding${u.length>1?'s':''} not found in the imaging, clinical findings or record — verify before finalizing</b>${u.map(x=>`<div style="margin-top:5px"><b>${esc(x.claim)}</b>: ${esc(x.detail)}<br><i style="color:var(--text)">“${esc(x.snippet)}”</i></div>`).join('')}</div>`
+    :'<div style="margin-top:8px;font-size:12.5px;color:var(--green)">✓ Grounding check: every finding traces to the imaging, clinical findings or record.</div>';
+}
+async function finalizeReport(id){
+  const b=$('#btn-finalize-report');if(b){b.disabled=true;b.textContent='Finalizing…';}
+  await api(`/api/reports/${id}/finalize`,{method:'POST'});
+  if(b)b.replaceWith(Object.assign(document.createElement('span'),{className:'tag llm',textContent:'Finalized ✓'}));
+  loadLog();
+}
+
+// ---- Reports list + view ----
+async function loadReportsList(){
+  const dv=$('#reports-detail-view'),lv=$('#reports-list-view');
+  if(dv)dv.style.display='none';if(lv)lv.style.display='block';
+  const rows=await api('/api/reports?status=all');
+  const rl=$('#reports-list');if(!rl)return;
+  rl.innerHTML=(rows&&rows.length)
+    ?`<table class="sched"><thead><tr><th>Patient</th><th>Summary</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>`+rows.map(r=>`<tr><td>${esc(r.patient_name)}</td><td style="color:var(--muted)">${esc((r.ai_summary||'').slice(0,60))}…</td><td><span class="chip ${r.status==='finalized'?'low':'medium'}">${esc(r.status)}</span></td><td style="font-size:12px">${esc((r.finalized_at||r.created_at||'').slice(0,16))}</td><td style="text-align:right"><button class="btn tiny primary" onclick="viewReport(${r.id})">View</button></td></tr>`).join('')+'</tbody></table>'
+    :'<div class="empty" style="padding:14px 0">No reports yet — generate one in Create Report.</div>';
+  const bb=$('#btn-back-reports');if(bb)bb.onclick=loadReportsList;
+}
+
+// ---- predicted-box drawing (class colours from the detector spec) ----
+const CLS_COLORS = {
+  early_caries:'#FF9F0A', advanced_caries:'#FF3B30', gingivitis:'#34C759',
+  hypodontia:'#0A84FF', Edentulism:'#0A84FF', plaque:'#FFD60A',
+  discoloration:'#BF5AF2', ulcer:'#32D0C8', abnormal:'#98989D'
+};
+function parseDets(im){
+  try { const d = typeof im.detections==='string' ? JSON.parse(im.detections) : (im.detections||[]); return Array.isArray(d)?d:[]; }
+  catch(e){ return []; }
+}
+function detLabel(im){
+  const d=parseDets(im);
+  if(!d.length) return im.filename||'';
+  const names=[...new Set(d.map(x=>x.display||x.name))];
+  return names.join(', ');
+}
+function legendHTML(imgs){
+  const names=[...new Set(imgs.flatMap(im=>parseDets(im).map(d=>d.display||d.name)))];
+  if(!names.length) return '';
+  return '<div class="rpt-legend">'+names.map(n=>{
+    const key=Object.keys(CLS_COLORS).find(k=>k.toLowerCase()===String(n).toLowerCase())||'abnormal';
+    return `<span><i style="background:${CLS_COLORS[key]}"></i>${esc(n)}</span>`;
+  }).join('')+'</div>';
+}
+function drawAnnotated(canvas, im){
+  const dets=parseDets(im);
+  const img=new Image();
+  img.onload=()=>{
+    // match the canvas backing store to its on-screen size (crisp, correct scale)
+    const rect=canvas.getBoundingClientRect();
+    const dpr=window.devicePixelRatio||1;
+    const W=Math.max(rect.width||260,120), H=Math.max(rect.height||130,100);
+    canvas.width=W*dpr; canvas.height=H*dpr;
+    const ctx0=canvas.getContext('2d'); ctx0.setTransform(dpr,0,0,dpr,0,0);
+    const cw=W, ch=H;
+    const ctx=canvas.getContext('2d');
+    ctx.clearRect(0,0,cw,ch);
+    // letterbox the image into the canvas
+    const scale=Math.min(cw/img.width, ch/img.height);
+    const dw=img.width*scale, dh=img.height*scale;
+    const ox=(cw-dw)/2, oy=(ch-dh)/2;
+    ctx.drawImage(img, ox, oy, dw, dh);
+    // draw each predicted box in its class colour
+    dets.forEach(d=>{
+      const b=d.box||[]; if(b.length<4) return;
+      const name=d.display||d.name||'abnormal';
+      const key=Object.keys(CLS_COLORS).find(k=>k.toLowerCase()===String(name).toLowerCase())||'abnormal';
+      const col=CLS_COLORS[key];
+      const x1=ox+b[0]*scale, y1=oy+b[1]*scale, x2=ox+b[2]*scale, y2=oy+b[3]*scale;
+      ctx.lineWidth=2; ctx.strokeStyle=col;
+      ctx.strokeRect(x1,y1,Math.max(x2-x1,2),Math.max(y2-y1,2));
+      const txt=`${name} ${Math.round((d.conf||0)*100)}%`;
+      ctx.font='600 10px system-ui,sans-serif';
+      const tw=ctx.measureText(txt).width+6;
+      ctx.fillStyle=col; ctx.fillRect(x1, Math.max(y1-13,0), tw, 13);
+      ctx.fillStyle='#fff'; ctx.fillText(txt, x1+3, Math.max(y1-3,10));
+    });
+  };
+  img.src=im.data_uri;
+}
+function renderReportCanvases(imgs){
+  // wait for layout so getBoundingClientRect() returns real sizes
+  requestAnimationFrame(()=>{
+    document.querySelectorAll('#report-detail .rpt-canvas').forEach(c=>{
+      const im=imgs[Number(c.dataset.idx)];
+      if(im) drawAnnotated(c, im);
+    });
+  });
+}
+
+async function viewReport(id){
+  const lv=$('#reports-list-view'),dv=$('#reports-detail-view');
+  if(lv)lv.style.display='none';if(dv)dv.style.display='block';
+  const rd=$('#report-detail');if(!rd)return;
+  rd.innerHTML='<div class="empty">Loading report…</div>';
+  const r=await api('/api/reports/'+id);
+  if(!r||!r.id){rd.innerHTML='<div class="empty">Could not load report.</div>';return;}
+  const p=await api('/api/patients/'+r.patient_id);
+  // images: accept a JSON string OR an already-parsed array; always fall back to
+  // the patient's stored scans so the report never renders empty.
+  let imgs=[];
+  if(Array.isArray(r.images)) imgs=r.images;
+  else if(typeof r.images==='string' && r.images.trim()){
+    try{ const parsed=JSON.parse(r.images); if(Array.isArray(parsed)) imgs=parsed; }catch(e){}
+  }
+  if(!imgs.length){
+    const fetched = await api('/api/patients/'+r.patient_id+'/scan-images');
+    if(Array.isArray(fetched)) imgs=fetched;
+  }
+  imgs = imgs.filter(im=>im && im.data_uri);
+  console.log('[report] images to render:', imgs.length);
+  const dt=(r.finalized_at||r.created_at||'').slice(0,16);
+  const statusChip=r.status==='finalized'
+    ? '<span class="chip low">FINALIZED</span>'
+    : '<span class="chip medium">DRAFT</span>';
+
+  rd.innerHTML=`
+  <div class="report-actions no-print">
+    ${r.status!=='finalized'?`<button class="btn primary" onclick="finalizeFromView(${r.id})">Finalize report</button>`:''}
+    <button class="btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+  </div>
+  <div class="report-doc" id="report-doc">
+    <div class="rpt-head">
+      <div class="rpt-brand"><b>denta</b><span>VIS</span></div>
+      <div class="rpt-clinic">
+        <h2>Visukhi Dental Clinic</h2>
+        <div>42 MG Road, Bengaluru — 560001</div>
+        <div>+91 80 4567 8900 · care@visukhidental.in</div>
+      </div>
+      <div class="rpt-meta">
+        ${statusChip}
+        <div>Report #${r.id}</div>
+        <div>${esc(dt)}</div>
+      </div>
+    </div>
+    <div class="rpt-title">Dental Screening Report</div>
+    <table class="rpt-patient">
+      <tr><td class="k">Patient</td><td class="v">${esc(r.patient_name||'')}</td>
+          <td class="k">MRN</td><td class="v">${esc((p&&p.mrn)||'—')}</td></tr>
+      <tr><td class="k">Age / Sex</td><td class="v">${(p&&p.age)||'—'} ${esc((p&&p.sex)||'')}</td>
+          <td class="k">Phone</td><td class="v">${esc((p&&p.phone)||'—')}</td></tr>
+      <tr><td class="k">Allergies</td><td class="v">${esc((p&&p.allergies)||'None recorded')}</td>
+          <td class="k">History</td><td class="v">${esc((p&&p.conditions)||'None recorded')}</td></tr>
+    </table>
+    <div class="rpt-sec"><div class="rpt-lab">Clinical Summary</div><div class="rpt-body">${esc(r.ai_summary||'')}</div></div>
+    <div class="rpt-sec"><div class="rpt-lab">Imaging Findings</div><div class="rpt-body">${esc(r.imaging||'No imaging findings recorded.')}</div></div>
+    <div class="rpt-sec"><div class="rpt-lab">Clinical Findings</div><div class="rpt-body">${esc(r.clinical||'None recorded.')}</div></div>
+    ${imgs.length?`<div class="rpt-sec"><div class="rpt-lab">Scan Images — Original &amp; AI Detection (${imgs.length})</div>
+      ${legendHTML(imgs)}
+      <div class="rpt-imgs">${imgs.map((im,ix)=>`<figure>
+        <div class="rpt-pair">
+          <div class="tile"><img src="${im.data_uri}" alt="Original scan"><div class="tile-lab">Original</div></div>
+          <div class="tile"><canvas class="rpt-canvas" data-idx="${ix}"></canvas><div class="tile-lab">AI Detection</div></div>
+        </div>
+        <figcaption>Image ${ix+1} — ${esc(im.verdict||'Screened')}<span class="sub">${esc(detLabel(im))}</span></figcaption>
+      </figure>`).join('')}</div></div>`:''}
+    <div class="rpt-foot">
+      <div class="sign"><div class="line"></div>Clinician signature</div>
+      <div class="note">AI-assisted screening report — decision support only. Findings must be confirmed by a qualified clinician. Generated by dentaVIS.</div>
+    </div>
+  </div>`;
+  renderReportCanvases(imgs);
+}
+async function finalizeFromView(id){
+  await api('/api/reports/'+id+'/finalize',{method:'POST'});
+  viewReport(id);
+}
+
+// ---- Patients list + CRUD ----
+let PATIENTS=[], EDIT_ID=null;
+async function loadPatientList(){ PATIENTS=await api('/api/patients')||[]; renderPatientList(); }
+function renderPatientList(){
+  const q=(($('#search-patients')||{}).value||'').toLowerCase();
+  const rows=PATIENTS.filter(p=>(p.name||'').toLowerCase().includes(q));
+  const el=$('#patients-rows');if(!el)return;
+  el.innerHTML=rows.length?rows.map(p=>`<tr><td><span class="plink" onclick="openChart(${p.id})">${esc(p.name)}</span></td><td>${esc(p.mrn)}</td><td>${p.age||''}${esc(p.sex||'')}</td><td style="text-align:right">
+    <button class="btn tiny" onclick="editPatient(${p.id})">Edit</button>
+    <button class="btn tiny b-rej" onclick="deletePatient(${p.id})">Delete</button>
+    <button class="btn tiny primary" onclick="openChart(${p.id})">Open chart</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">No matches.</td></tr>';
+}
+function showPatientForm(show){ const f=$('#patient-form');if(f)f.style.display=show?'block':'none'; const s=$('#pf-status');if(s)s.textContent=''; }
+function fillPatientForm(p){ ['pf-name','pf-age','pf-sex','pf-phone','pf-allergies','pf-conditions'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=p&&p[id.slice(3)]!=null?p[id.slice(3)]:'';});
+  if($('#pf-name')&&p)$('#pf-name').value=p.name||''; if($('#pf-age')&&p)$('#pf-age').value=p.age||''; if($('#pf-sex')&&p)$('#pf-sex').value=p.sex||''; if($('#pf-phone')&&p)$('#pf-phone').value=p.phone||''; if($('#pf-allergies')&&p)$('#pf-allergies').value=p.allergies||''; if($('#pf-conditions')&&p)$('#pf-conditions').value=p.conditions||'';
+}
+async function editPatient(id){ const p=await api('/api/patients/'+id); EDIT_ID=id; const t=$('#patient-form-title');if(t)t.textContent='Edit patient'; fillPatientForm(p); showPatientForm(true); }
+async function deletePatient(id){ if(!confirm('Remove this patient from the roster? (record is kept)')) return; await api('/api/patients/'+id,{method:'DELETE'}); loadPatientList(); }
+async function savePatient(){
+  const name=($('#pf-name')||{}).value?.trim();if(!name){const s=$('#pf-status');if(s)s.textContent='Name is required.';return;}
+  const phone=($('#pf-phone')||{}).value||'';
+  const body={name,age:parseInt(($('#pf-age')||{}).value)||null,sex:($('#pf-sex')||{}).value||'',phone,allergies:($('#pf-allergies')||{}).value||'',conditions:($('#pf-conditions')||{}).value||''};
+  const b=$('#btn-save-patient');if(b){b.disabled=true;b.textContent='Saving…';}
+  if(EDIT_ID){
+    await api('/api/patients/'+EDIT_ID,{method:'PUT',body:JSON.stringify(body)});
+  } else {
+    // Duplicate check: a returning patient should be matched to their EXISTING
+    // record (so their visit/note/scan history keeps accumulating there), not
+    // spawn a second chart with a new MRN and no history.
+    const candidates = await api('/api/patients/find?phone='+encodeURIComponent(phone)+'&name='+encodeURIComponent(name));
+    const existing = (candidates||[]).find(c=>c.match_reason==='phone') || (candidates||[])[0];
+    if(existing){
+      const reason = existing.match_reason==='phone' ? 'phone number' : 'name';
+      const useExisting = confirm(`A patient matching this ${reason} already exists: ${existing.name} (${existing.mrn}).\n\nOpen their existing record instead of creating a duplicate?\n\nOK = open existing patient · Cancel = create as a new patient anyway`);
+      if(useExisting){
+        showPatientForm(false);
+        if(b){b.disabled=false;b.textContent='Save';}
+        openChart(existing.id);
+        return;
+      }
+    }
+    await api('/api/patients',{method:'POST',body:JSON.stringify(body)});
+  }
+  showPatientForm(false); await loadPatientList();
+  if(b){b.disabled=false;b.textContent='Save';}
+}
+
+// ---- shared approve + record/log ----
+async function approveGeneric(btn){
+  btn.disabled=true;btn.textContent='…';
+  const res=await api(`/api/actions/${btn.dataset.id}/approve`,{method:'POST'});
+  const row=btn.closest('.action'); row.classList.add('done');
+  btn.replaceWith(Object.assign(document.createElement('span'),{className:'tag llm',textContent:'Done',title:(res&&res.message)||''}));
+  // an approved imaging finding can start/advance the visit pipeline — say so
+  if(res&&res.message&&/pipeline|SOAP/i.test(res.message)){
+    const note=document.createElement('div'); note.className='disclaimer'; note.style.margin='6px 0 0';
+    note.innerHTML=`${esc(res.message.replace(/^Imaging findings saved to patient record\.\s*/,''))} <a style="cursor:pointer;color:var(--blue)" onclick="showPage('pipeline')">Open Visit Pipeline →</a>`;
+    row.after(note);
+  }
+  loadRecord(); loadLog();
+}
+async function loadRecord(){
+  if(!ACTIVE)return;
+  const ctx=await api('/api/patients/'+ACTIVE.id+'/context');
+  const el=$('#record-notes');if(!el)return;
+  const visits=(ctx&&ctx.visits)||[];
+  const visitsHtml = visits.length
+    ? '<div class="section-label" style="margin-top:0">Visit history</div>'
+      + visits.slice().reverse().map(v=>`<div class="note-item"><span class="k">visit</span> · ${esc(v.date)}
+${esc(v.complaint||'')} → ${esc(v.diagnosis||'')} (${esc(v.treatment||'')})${v.notes?'. '+esc(v.notes):''}</div>`).join('')
+    : '';
+  const notes=(ctx&&ctx.notes)||[];
+  const notesHtml = notes.length
+    ? (visits.length?'<div class="section-label">Saved notes</div>':'') + notes.map(n=>`<div class="note-item"><span class="k">${esc(n.kind)}</span> · ${esc(n.created_at)}
+${esc(n.content)}</div>`).join('')
+    : '';
+  el.innerHTML = (visitsHtml + notesHtml) || '<div class="empty" style="padding:14px 0">No history yet.</div>';
+}
+async function loadLog(){
+  const log=await api('/api/agent-log');
+  const el=$('#log');if(!el)return;
+  el.innerHTML=(log&&log.length)?log.map(l=>`<div class="log-item"><time>${l.created_at}</time><br>${esc(l.message)}</div>`).join(''):'<div class="empty" style="padding:14px 0">Nothing yet.</div>';
+}
+
+// ---- Staff ----
+async function loadStaff(){
+  const rows=await api('/api/staff')||[];
+  const el=$('#staff-rows');if(!el)return;
+  el.innerHTML=rows.filter(r=>r.active).map(r=>`<tr><td>${esc(r.username)}</td><td>${esc(r.display_name)}</td><td style="color:var(--muted);font-size:12px">${(r.created_at||'').slice(0,10)}</td><td style="text-align:right"><button class="btn tiny b-rej" onclick="removeStaff(${r.id})">Remove</button></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No staff found.</td></tr>';
+}
+async function saveStaff(){
+  const u=($('#sf-username')||{}).value?.trim(),n=($('#sf-name')||{}).value?.trim(),p=($('#sf-password')||{}).value;
+  const s=$('#sf-status');
+  if(!u||!n||!p){if(s)s.textContent='All fields required.';return;}
+  if(p.length<6){if(s)s.textContent='Password too short (min 6).';return;}
+  const b=$('#btn-save-staff');if(b){b.disabled=true;b.textContent='Adding…';}
+  const r=await api('/api/staff',{method:'POST',body:JSON.stringify({username:u,display_name:n,password:p})});
+  if(r&&r.ok){const f=$('#staff-form');if(f)f.style.display='none';loadStaff();}
+  else if(s)s.textContent=(r&&r.detail)||'Could not add staff.';
+  if(b){b.disabled=false;b.textContent='Add';}
+}
+async function removeStaff(id){ if(!confirm('Remove this staff member?')) return; await api('/api/staff/'+id,{method:'DELETE'}); loadStaff(); }
+
+// ---- ML dashboard ----
+async function loadMLDashboard(){
+  const rs=$('#retrain-status');
+  try{
+    const [reg,hist]=await Promise.all([api('/api/ml/model-registry'),api('/api/ml/retrain-history')]);
+    const active=(reg||[]).find(r=>r.status==='active');
+    if(rs)rs.innerHTML=active?`Active model: <b>v${active.version}</b> · AUC <b>${(active.auc||0).toFixed(4)}</b> · trained on <b>${active.trained_on||'—'}</b> rows`:'No model registered yet.';
+    const rr=$('#registry-rows');if(rr)rr.innerHTML=(reg&&reg.length)?reg.map(r=>`<tr><td>v${r.version}</td><td>${(r.auc||0).toFixed(4)}</td><td>${r.trained_on||'—'}</td><td><span class="chip ${r.status==='active'?'low':r.status==='retired'?'medium':'high'}">${r.status}</span></td><td>${(r.created_at||'').slice(0,10)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No versions yet.</td></tr>';
+    const hr=$('#retrain-rows');if(hr)hr.innerHTML=(hist&&hist.length)?hist.map(h=>`<tr><td>${(h.triggered_at||'').slice(0,16)}</td><td>${h.new_rows||0}</td><td>${h.old_auc?h.old_auc.toFixed(4):'—'}</td><td>${h.new_auc?h.new_auc.toFixed(4):'—'}</td><td><span class="chip ${h.promoted?'low':'medium'}">${h.promoted?'promoted':'skipped'}</span></td><td style="color:var(--muted);font-size:12px">${esc(h.reason||'')}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">No runs yet.</td></tr>';
+  }catch(e){if(rs)rs.textContent='Could not load ML dashboard.';}
+}
+async function runRetrain(){
+  const b=$('#btn-retrain'),rs=$('#retrain-status');
+  if(b){b.disabled=true;b.textContent='Running…';}if(rs)rs.textContent='Retraining…';
+  const r=await api('/api/ml/retrain?force=true',{method:'POST'});
+  await loadMLDashboard();
+  if(rs)rs.innerHTML+=' &nbsp;·&nbsp; <b>'+(r.promoted?'✓ Promoted':'✗ Not promoted')+'</b>: '+esc(r.reason||'');
+  if(b){b.disabled=false;b.textContent='Run now';}
+}
+
+// ---- Visit Pipeline ----
+// Polls while any run is mid-step (agents drafting) and this page is open.
+let PL_TIMER=null;
+const PL_STATUS={running:'Agent working…',awaiting_soap:'Waiting for your SOAP review',awaiting_report:'Waiting for your report review',done:'Done',rejected:'Stopped',failed:'Failed'};
+async function loadPipeline(){
+  const sel=$('#pl-patient');
+  if(sel&&sel.options.length<=1){ const ps=await api('/api/patients'); sel.innerHTML=(ps||[]).map(p=>`<option value="${p.id}">${esc(p.name)} — ${esc(p.mrn)}</option>`).join(''); }
+  await renderPipelineRuns();
+}
+function plStages(r){
+  const order=['imaging','soap','report','done'], labels={imaging:'Imaging',soap:'SOAP ⏸',report:'Report ⏸',done:'Finalized'};
+  const at=r.status==='awaiting_soap'?1:r.status==='awaiting_report'?2:r.status==='done'?4:-1;
+  return '<div class="pl-stages">'+order.map((s,i)=>`<span class="${i<at?'ok':i===at?'on':''}">${labels[s]}</span>`).join('<span style="background:none;padding:3px 0">→</span>')+'</div>';
+}
+// Record facts + the deterministic safety check, shown above every draft
+function plSafety(p){
+  const rec=p.record||{}, w=p.warnings||[];
+  const ins=[`<div class="insight ${rec.allergies&&rec.allergies!=='none recorded'?'urgent':'info'}"><span class="sev"></span><div><b>Allergies on record</b><span>${esc(rec.allergies||'—')}</span></div></div>`,
+             `<div class="insight ${rec.conditions&&rec.conditions!=='none recorded'?'watch':'info'}"><span class="sev"></span><div><b>Conditions on record</b><span>${esc(rec.conditions||'—')}</span></div></div>`];
+  const warn=w.length?`<div class="status error" style="display:block;background:var(--red-bg);color:var(--red);padding:10px 12px;border-radius:7px;margin:8px 0"><b>⚠ Safety check: ${w.length} issue${w.length>1?'s':''} — fix before approving</b><br>${w.map(esc).join('<br>')}</div>`
+                     :'<div class="status" style="display:block;color:var(--green)">✓ Safety check: draft is consistent with recorded allergies and conditions.</div>';
+  const u=p.unsupported||[];
+  const grd=u.length?`<div class="status" style="display:block;background:var(--yellow-bg);color:var(--yellow);padding:10px 12px;border-radius:7px;margin:8px 0"><b>⚠ Grounding check: ${u.length} finding${u.length>1?'s':''} not found in the complaint, imaging or record — verify or remove</b>${u.map(x=>`<div style="margin-top:6px"><b>${esc(x.claim)}</b>: ${esc(x.detail)}<br><i style="color:var(--text)">“${esc(x.snippet)}”</i></div>`).join('')}</div>`
+                    :'<div class="status" style="display:block;color:var(--green)">✓ Grounding check: every finding traces to the complaint, imaging or record.</div>';
+  return ins.join('')+warn+grd;
+}
+function plSoapForm(r){
+  const s=r.pending.soap||{};
+  return `<div class="stage"><h4><span class="num">1</span> SOAP note — draft ${r.pending.drafts} <span class="tag ${r.pending.source==='llm'?'llm':'demo'}">${r.pending.source==='llm'?'Local model':'Demo (offline)'}</span></h4>${plSafety(r.pending)}
+    ${['subjective','objective','assessment'].map(k=>`<div class="field"><label>${k[0].toUpperCase()+k.slice(1)}</label><textarea data-k="${k}">${esc(s[k]||'')}</textarea></div>`).join('')}
+    <div class="field"><label>Plan (one item per line)</label><textarea data-k="plan">${esc((s.plan||[]).join('\n'))}</textarea></div>
+    <div class="field"><label>Chief complaint (used if you redraft)</label><textarea data-k="complaint" style="min-height:38px"></textarea></div>
+    <details class="cp-trace"><summary>Imaging used</summary><div class="cp-step">${esc(r.pending.imaging||'')}</div></details>
+    <div class="btn-row"><button class="btn b-rej" data-act="reject">Reject</button><button class="btn" data-act="redraft">Redraft</button><button class="btn primary" data-act="approve">Approve &amp; save note</button></div></div>`;
+}
+function plReportForm(r){
+  return `<div class="stage"><h4><span class="num">2</span> Report #${r.pending.report_id} <span class="tag ${r.pending.source==='llm'?'llm':'demo'}">${r.pending.source==='llm'?'Local model':'Demo (offline)'}</span></h4>${plSafety(r.pending)}
+    <div class="field"><label>AI summary</label><textarea data-k="summary" style="min-height:90px">${esc(r.pending.summary||'')}</textarea></div>
+    <div class="btn-row"><button class="btn" onclick="showPage('reports');viewReport(${r.pending.report_id})">Preview report</button><button class="btn b-rej" data-act="reject">Reject</button><button class="btn" data-act="redraft">Redraft</button><button class="btn primary" data-act="approve">Approve &amp; finalize</button></div></div>`;
+}
+async function renderPipelineRuns(){
+  const box=$('#pl-runs'); if(!box) return;
+  const runs=await api('/api/pipeline/runs');
+  if(!Array.isArray(runs)||!runs.length){ box.innerHTML='<div class="card"><div class="empty">No pipeline runs yet. Approve an imaging finding on the Scan page, or start one above.</div></div>'; }
+  else box.innerHTML=runs.map(r=>{
+    const cls=r.status.startsWith('awaiting')?'awaiting':r.status;
+    const body=r.status==='awaiting_soap'&&r.pending?plSoapForm(r):r.status==='awaiting_report'&&r.pending?plReportForm(r):'';
+    const err=r.status==='failed'&&r.error?`<div class="status error" style="display:block">${esc(r.error)}</div>`:'';
+    return `<div class="card pl-run ${cls}" data-run="${r.id}" data-stage="${r.status.replace('awaiting_','')}">
+      <div class="pl-head"><div><b>${esc(r.patient_name||'Patient '+r.patient_id)}</b><small>Run #${r.id} · ${esc(r.trigger||'')} · updated ${esc((r.updated_at||'').slice(0,16))} UTC</small></div>
+      <span class="chip ${cls==='done'?'low':cls==='awaiting'||cls==='running'?'medium':'high'}">${PL_STATUS[r.status]||esc(r.status)}</span></div>
+      ${plStages(r)}${err}${body}</div>`;
+  }).join('');
+  box.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>pipelineDecide(b));
+  clearTimeout(PL_TIMER);
+  const pg=document.getElementById('page-pipeline');
+  if(Array.isArray(runs)&&runs.some(r=>r.status==='running')&&pg&&pg.classList.contains('active')) PL_TIMER=setTimeout(renderPipelineRuns,4000);
+}
+async function pipelineDecide(btn){
+  const card=btn.closest('.pl-run'), stage=card.dataset.stage, action=btn.dataset.act;
+  if(action==='reject'&&!confirm('Reject and stop this pipeline?')) return;
+  const val=k=>{const t=card.querySelector(`textarea[data-k="${k}"]`); return t?t.value.trim():'';};
+  const body={stage,action};
+  if(stage==='soap'&&action==='approve') body.soap={subjective:val('subjective'),objective:val('objective'),assessment:val('assessment'),plan:val('plan').split('\n').map(s=>s.trim()).filter(Boolean)};
+  if(stage==='soap'&&action==='redraft'&&val('complaint')) body.complaint=val('complaint');
+  if(stage==='report'&&action==='approve') body.summary=val('summary');
+  card.querySelectorAll('button').forEach(b=>b.disabled=true);
+  const r=await api(`/api/pipeline/${card.dataset.run}/resume`,{method:'POST',body:JSON.stringify(body)});
+  if(r&&r.detail) alert(r.detail);
+  await renderPipelineRuns(); loadLog();
+}
+async function startPipeline(){
+  const pid=($('#pl-patient')||{}).value, st=$('#pl-status');
+  if(!pid) return;
+  const r=await api('/api/pipeline/start',{method:'POST',body:JSON.stringify({patient_id:+pid,complaint:($('#pl-complaint')||{}).value||''})});
+  if(st){ st.textContent=r&&r.detail?r.detail:'Started — the Clinical agent is drafting the SOAP note.'; st.className='status '+(r&&r.detail?'error':'success'); st.style.display='block'; }
+  if($('#pl-complaint')) $('#pl-complaint').value='';
+  await renderPipelineRuns();
+}
+
+// ---- Clinic Copilot ----
+// History lives here in the page (the server is stateless); it's sent with each turn.
+let CP_HISTORY=[], CP_BUSY=false;
+const cpFormat = t => esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+function copilotClear(){
+  CP_HISTORY=[];
+  const log=$('#cp-log'); if(log) log.innerHTML='<div class="empty">New conversation. Ask a question to start.</div>';
+}
+function cpAppend(html, cls){
+  const log=$('#cp-log'); if(!log) return null;
+  const empty=log.querySelector('.empty'); if(empty) empty.remove();
+  const d=document.createElement('div'); d.className='cp-msg '+cls; d.innerHTML=html;
+  log.appendChild(d); log.scrollTop=log.scrollHeight; return d;
+}
+async function copilotSend(text){
+  const ta=$('#cp-text');
+  const msg=(text||(ta&&ta.value)||'').trim();
+  if(!msg||CP_BUSY) return;
+  CP_BUSY=true; if(ta) ta.value='';
+  const btn=$('#cp-send'); if(btn){btn.disabled=true;btn.textContent='Thinking…';}
+  cpAppend(esc(msg),'user');
+  const pending=cpAppend('<span style="color:var(--muted)">Working — the agent is choosing which lookups to run…</span>','bot');
+  const r=await api('/api/copilot/chat',{method:'POST',body:JSON.stringify({message:msg,history:CP_HISTORY})});
+  if(pending) pending.remove();
+  if(!r||!r.answer){
+    cpAppend(esc((r&&r.detail)||'No response from the server.'),'bot err');
+  } else {
+    const steps=(r.steps||[]).map(s=>`<div class="cp-step ${s.ok?'':'fail'}"><b>${esc(s.tool)}</b>(${esc(JSON.stringify(s.args))})<br>→ ${esc(s.result)}</div>`).join('');
+    const trace=steps?`<details class="cp-trace"><summary>${r.steps.length} tool call${r.steps.length>1?'s':''} · ${r.rounds} round${r.rounds>1?'s':''}</summary>${steps}</details>`:'';
+    const thoughts=(r.thoughts||[]).map((t,i)=>`<div class="cp-step"><b>round ${i+1}</b><br>${esc(t)}</div>`).join('');
+    const why=thoughts?`<details class="cp-trace"><summary>Model's reasoning</summary>${thoughts}</details>`:'';
+    const acts=(r.actions||[]).map(a=>`<div class="action" data-id="${a.id}"><span class="lbl">${esc(a.label)}</span><button class="btn primary tiny act-approve" data-id="${a.id}">Approve</button></div>`).join('');
+    const tag=r.source==='llm'?`<span class="tag llm">Local model · ${esc(r.model)}</span>`:`<span class="tag demo">Model unavailable</span>`;
+    const u=r.unsupported||[];
+    const grd=u.length?`<div style="margin-top:10px;background:var(--yellow-bg);color:var(--yellow);padding:9px 11px;border-radius:7px;font-size:12.5px"><b>⚠ Grounding check: ${u.length} finding${u.length>1?'s':''} not found in the records looked up — verify before relying on ${u.length>1?'them':'it'}</b>${u.map(x=>`<div style="margin-top:5px"><b>${esc(x.claim)}</b>: ${esc(x.detail)}</div>`).join('')}</div>`:'';
+    const el=cpAppend(`${cpFormat(r.answer)}${grd}${acts?`<div class="cp-actions">${acts}</div>`:''}${trace}${why}<div class="cp-meta">${tag}</div>`,
+                      'bot'+(r.source==='llm'?'':' err'));
+    if(el) el.querySelectorAll('.act-approve').forEach(b=>b.addEventListener('click',()=>approveGeneric(b)));
+    if(r.source==='llm'){
+      CP_HISTORY.push({role:'user',content:msg},{role:'assistant',content:r.answer});
+      CP_HISTORY=CP_HISTORY.slice(-10);
+    }
+  }
+  if(btn){btn.disabled=false;btn.textContent='Send';}
+  CP_BUSY=false;
+}
+
+// ---- boot ----
+document.addEventListener('DOMContentLoaded',()=>{
+  const lb=$('#btn-login');if(lb)lb.onclick=doLogin;
+  const lp=$('#login-password');if(lp)lp.onkeydown=e=>{if(e.key==='Enter')doLogin();};
+  renderPatientBar();
+  if(TOKEN){
+    // verify token is still valid before auto-showing the app
+    api('/api/auth/me').then(me=>{
+      if(me&&me.sub){ DISPLAY_NAME=me.name||DISPLAY_NAME; showApp(); }
+      else{ try{localStorage.removeItem('dv_token');localStorage.removeItem('dv_name');}catch(e){} TOKEN=''; }
+    });
+  }
+});
+
+</script>
+</body>
+</html>

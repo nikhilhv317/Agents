@@ -1,0 +1,41 @@
+# Inferred from imports actually seen in app.py, db.py, auth.py, llm.py,
+# agents/*.py, and ml/*.py during this session — NOT copied from your real,
+# working requirements.txt (never uploaded). Before building the Docker
+# image, replace this with `pip freeze` from your actual working environment
+# so the container matches what you've already tested locally, especially
+# for torch / ultralytics / langgraph, where version mismatches break silently
+# or noisily depending on the pair.
+#
+# torch / torchvision are deliberately NOT listed here — the Dockerfile
+# installs them separately from the CPU-only wheel index (see Dockerfile
+# comment). For a non-Docker local install, add them back with:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+python-multipart>=0.0.9        # required by FastAPI for File(...)/Form(...) uploads
+python-jose[cryptography]>=3.3 # JWT (auth.py)
+bcrypt>=4.1
+
+apscheduler>=3.10              # weekly retrain job (app.py)
+
+pandas>=2.0
+scikit-learn>=1.4
+
+timm>=0.9                      # gate model backbone (vision/pipeline.py)
+ultralytics>=8.1                # YOLO detector (vision/pipeline.py) — also pulls in
+                                 # opencv-python, which vision/pipeline.py's
+                                 # extract_frames() reuses for video reading. Do NOT
+                                 # add opencv-python-headless separately — both
+                                 # packages provide the `cv2` module and installing
+                                 # both causes a real pip conflict. VideoCapture works
+                                 # fine in the regular opencv-python build; libgl1 in
+                                 # the Dockerfile already covers the import requirement.
+pillow>=10.0
+
+langgraph>=0.1                  # imaging_agent.py, scheduling_agent.py, copilot.py, visit_pipeline.py
+langgraph-checkpoint-sqlite>=2.0 # visit_pipeline.py — durable pauses (SqliteSaver)
+langchain-ollama>=0.1           # scheduling_agent.py reminder generation
+langchain-core>=0.2
+ollama>=0.2                     # llm.py — direct client for complete_json()

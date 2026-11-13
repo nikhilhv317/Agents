@@ -1,0 +1,37 @@
+# Local state that must never end up baked into the image — these live in
+# mounted volumes instead (see docker-compose.yml).
+dpms.db
+dpms.db-*
+data/
+models/*.pkl
+vision/*.pt
+vision/*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# VCS / editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Docs not needed inside the container
+README.md
+*.md
+
+# Sample/recorded media and DB sidecar files
+*.mp4
+*.db
+*.db-*
+*.pdf

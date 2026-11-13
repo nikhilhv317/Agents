@@ -1,0 +1,63 @@
+# dentaVIS — local Docker Compose stack.
+#
+# Two containers:
+#   ollama  — the model server. dentaVIS's llm.py talks to it over HTTP, same
+#             as it does to a locally-installed Ollama — just at a different
+#             host (the "ollama" service name Compose resolves on its network,
+#             instead of localhost).
+#   app     — the FastAPI app + your CV pipeline + the scheduling model.
+#
+# First run only, after `docker compose up -d`, pull the model INTO the
+# ollama container's own storage (it doesn't share your host's ~/.ollama):
+#     docker compose exec ollama ollama pull qwen3:1.7b
+# Without this, llm.py's calls raise LLMUnavailable and every agent quietly
+# falls back to its demo-mode output — the app still runs, just not with real
+# model output. Check the "Claude"/"Demo (offline)" tag in the UI to tell
+# which mode you're actually in.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dentavis-ollama
+    volumes:
+      - ollama_data:/root/.ollama   # pulled models persist across restarts/rebuilds
+    restart: unless-stopped
+    # No ports published to the host by default — only the app container needs
+    # to reach it, over the internal Compose network. Uncomment to hit it
+    # directly from your host machine for debugging:
+    # ports:
+    #   - "11434:11434"
+
+  app:
+    build: .
+    container_name: dentavis-app
+    depends_on:
+      - ollama
+    ports:
+      - "8000:8000"
+    environment:
+      # Service name "ollama", not localhost — this is the one line that
+      # changes between "Ollama installed on this machine" and "Ollama in
+      # its own container."
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
+      # No default: compose refuses to start until JWT_SECRET is set in .env.
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (see env.example)}
+      # Optional. Unset -> a random admin password is printed in `docker compose logs app`.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - DPMS_DB_PATH=/app/data/dpms.db
+      # No GATE_WEIGHTS / GATE_META / DETECTOR_WEIGHTS overrides needed —
+      # vision/pipeline.py's own default (HERE = its own folder) already
+      # resolves to /app/vision, which is exactly where the volume below
+      # lands your real gate_best.pt / gate_meta.json / detector_best.pt.
+    volumes:
+      - ./data:/app/data          # SQLite DB — survives image rebuilds
+      - ./models:/app/models      # noshow.pkl + versioned model registry (retrain.py writes here)
+      - ./vision:/app/vision      # your existing vision/ folder as-is — pipeline.py
+                                   # AND your .pt/.json weights live here together,
+                                   # so mounting the whole folder keeps both in sync
+                                   # with your local working copy
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
