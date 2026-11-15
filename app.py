@@ -12,7 +12,7 @@ Agents:
     Smart Scheduling      -> GET  /api/scheduling/today                  (morning job + on demand)
                              POST /api/scheduling/approve
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Body
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -252,20 +252,30 @@ def api_outcome(appt_id: int, req: OutcomeReq, user=Depends(require_auth)):
     return {"ok": True}
 
 
-class RunReq(BaseModel):
-    subject_id: int
+@app.get("/api/agents")
+def api_list_agents(user=Depends(require_auth)):
+    return agents.list_agents()
 
 
 @app.post("/api/agents/{agent_key}/run")
-def api_run_agent(agent_key: str, req: RunReq, user=Depends(require_auth)):
-    agent = agents.get_agent(agent_key)
-    if agent is None:
+def api_run_agent(agent_key: str, params: dict = Body(default={}), user=Depends(require_auth)):
+    """Run any registered agent with its keyword params as the JSON body, e.g.
+    {"subject_id": 1} for patient_intelligence or {"patient_id": 1, "clinical": "..."}
+    for report. File-input agents (imaging) use their multipart endpoint."""
+    spec = agents.get_agent(agent_key)
+    if spec is None:
         raise HTTPException(404, f"unknown agent '{agent_key}'")
+    if spec.admin_only and user.get("sub") != "admin":
+        raise HTTPException(403, "Admin only")
+    if spec.input == "files":
+        raise HTTPException(400, f"'{agent_key}' takes file uploads — use /api/imaging/analyze_batch")
+    unknown = set(params) - set(spec.params)
+    if unknown:
+        raise HTTPException(400, f"unknown params {sorted(unknown)}; '{agent_key}' accepts {list(spec.params)}")
     try:
-        result = agent.run(req.subject_id)
-    except ValueError as e:
+        return agents.run(agent_key, **params)
+    except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
-    return result.model_dump()
 
 
 @app.post("/api/actions/{action_id}/approve")
@@ -295,8 +305,8 @@ def api_copilot_chat(req: CopilotReq, user=Depends(require_auth)):
     proposed action to approve via /api/actions/{id}/approve."""
     if not req.message.strip():
         raise HTTPException(400, "message is empty")
-    from agents import copilot
-    return copilot.chat(req.message, [t.model_dump() for t in req.history])
+    return agents.run("copilot", message=req.message,
+                      history=[t.model_dump() for t in req.history])
 
 
 # ---- Visit Pipeline (event-driven, pauses for human review) -----------------
@@ -329,9 +339,9 @@ def api_pipeline_runs(user=Depends(require_auth)):
 
 @app.post("/api/pipeline/start")
 def api_pipeline_start(req: PipelineStartReq, user=Depends(require_auth)):
-    from agents import visit_pipeline
     try:
-        return visit_pipeline.start(req.patient_id, req.complaint, trigger=f"started by {user['sub']}")
+        return agents.run("visit_pipeline", patient_id=req.patient_id, complaint=req.complaint,
+                          trigger=f"started by {user['sub']}")
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -359,8 +369,7 @@ def _scheduling():
 @app.get("/api/scheduling/today")
 def api_scheduling_today(user=Depends(require_auth)):
     """Score today's schedule (fast — sklearn only). No parked run to go stale."""
-    sched = _scheduling()
-    return sched.run_for_date(date.today().isoformat())
+    return agents.run("scheduling", day=date.today().isoformat())
 
 
 class DecisionReq(BaseModel):
@@ -461,9 +470,8 @@ def api_get_scan_images(patient_id: int, user=Depends(require_auth)):
 
 @app.post("/api/reports/generate")
 def api_report_generate(req: ReportReq, user=Depends(require_auth)):
-    from agents import report_agent
     try:
-        return report_agent.generate(req.patient_id, req.clinical)
+        return agents.run("report", patient_id=req.patient_id, clinical=req.clinical)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -501,9 +509,9 @@ class ClinicalReq(BaseModel):
 
 @app.post("/api/clinical/draft")
 def api_clinical_draft(req: ClinicalReq, user=Depends(require_auth)):
-    from agents import clinical_assistant
     try:
-        return clinical_assistant.draft(req.patient_id, req.complaint, req.findings)
+        return agents.run("clinical_assistant", patient_id=req.patient_id,
+                          complaint=req.complaint, findings=req.findings)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -541,7 +549,6 @@ async def api_imaging_batch(files: list[UploadFile] = File(...), patient_id: int
     """Analyze many images in one batched, full-speed pass. If patient_id is given,
     findings attach to that patient's chart on approval."""
     import tempfile
-    from agents import imaging_agent
     from vision.pipeline import PipelineUnavailable
 
     paths, names = [], []
@@ -554,7 +561,7 @@ async def api_imaging_batch(files: list[UploadFile] = File(...), patient_id: int
         paths.append(tmp.name)
         names.append(f.filename)
     try:
-        results = imaging_agent.analyze_batch(paths, patient_id)
+        results = agents.run("imaging", image_paths=paths, patient_id=patient_id)
         for r, n in zip(results, names):
             r["filename"] = n
         return {"results": results}
@@ -619,15 +626,23 @@ def _start_scheduler():
         return
 
     def morning_run():
+        # Scoring is fast and the Appointments screen re-scores on open, so the
+        # job's value is the heads-up: post the day's outlook to Agent Activity.
         try:
-            _scheduling().run_for_date(date.today().isoformat())
-        except Exception:
-            pass
+            res = agents.run("scheduling", day=date.today().isoformat())
+            exp, preds = res["expected"], res["predictions"]
+            high = [p["patient"] for p in preds if p["band"] == "high" and not p["is_new"]]
+            msg = (f"Morning schedule scored: {exp['n']} appointments, expect "
+                   f"~{exp['attend_mean']} ({exp['low']}–{exp['high']}) to attend")
+            if high:
+                msg += f"; high no-show risk: {', '.join(high)}"
+            db.add_log("scheduling", f"day:{res['date']}", msg + ".")
+        except Exception as e:
+            db.add_log("scheduling", "job:morning", f"Morning scoring failed: {e}")
 
     def weekly_retrain():
         try:
-            from ml.retrain import run as retrain_run
-            result = retrain_run(force=False, verbose=False)
+            result = agents.run("retraining", force=False, verbose=False)
             status = "promoted" if result.get("promoted") else "skipped"
             db.add_log("retraining", "model:noshow",
                        f"Weekly retrain {status}: {result.get('reason','')}")
@@ -648,8 +663,7 @@ def _start_scheduler():
 def api_retrain(force: bool = False, user=Depends(require_admin)):
     """Trigger a retrain manually. force=true skips the MIN_NEW_OUTCOMES check."""
     try:
-        from ml.retrain import run as retrain_run
-        return retrain_run(force=force, verbose=False)
+        return agents.run("retraining", force=force, verbose=False)
     except Exception as e:
         raise HTTPException(500, str(e))
 

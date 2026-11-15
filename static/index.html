@@ -236,7 +236,7 @@
       <div class="page active" id="page-dashboard">
         <div class="stats">
           <div class="card stat c1"><div class="label">Patients</div><b>12</b><div class="caption">On the roster</div></div>
-          <div class="card stat c2"><div class="label">Agents live</div><b>4</b><div class="caption">Patient · Scheduling · Imaging · Clinical</div></div>
+          <div class="card stat c2"><div class="label">Agents live</div><b id="dash-agents">—</b><div class="caption" id="dash-agents-names">Registered agents</div></div>
           <div class="card stat c3"><div class="label">Today's appts</div><b id="dash-appts">—</b><div class="caption">Scored for no-show risk</div></div>
           <div class="card stat c4"><div class="label">Models</div><b>Local</b><div class="caption">Ollama + your vision .pt</div></div>
         </div>
@@ -606,6 +606,7 @@ function showPage(id){
 
 async function loadDash(){
   try{ const d=await api('/api/scheduling/today'); const el=$('#dash-appts'); if(el) el.textContent=(d.expected&&d.expected.n)||'—'; }catch(e){}
+  try{ const ag=await api('/api/agents')||[]; const n=$('#dash-agents'), c=$('#dash-agents-names'); if(n) n.textContent=ag.length||'—'; if(c&&ag.length) c.textContent=ag.map(a=>a.name).join(' · '); }catch(e){}
 }
 
 // ---- Appointments ----

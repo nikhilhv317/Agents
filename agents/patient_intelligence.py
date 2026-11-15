@@ -183,3 +183,8 @@ class PatientIntelligenceAgent(BaseAgent):
         return AgentResult(agent=self.key, subject=subject, source="demo",
                            summary=summary, insights=insights,
                            recommendations=recs, actions=actions)
+
+
+def run(subject_id) -> AgentResult:
+    """Registry entry point (see agents/__init__.py)."""
+    return PatientIntelligenceAgent().run(subject_id)

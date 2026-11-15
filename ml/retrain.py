@@ -101,15 +101,20 @@ def run(force=False, verbose=True):
 
     t0 = time.time()
     total_outcomes = db.count_new_outcomes()
+    # "new" = outcomes the active model hasn't been trained on. trained_on is the
+    # row count it was fit on, so the difference is what's accumulated since.
+    # With no registered model yet, everything counts as new (first run).
+    active = db.get_active_model()
+    new_outcomes = total_outcomes - ((active["trained_on"] or 0) if active else 0)
     if verbose:
-        print(f"[retrain] labelled outcomes in DB: {total_outcomes}")
+        print(f"[retrain] labelled outcomes in DB: {total_outcomes} ({new_outcomes} new)")
 
-    if total_outcomes < MIN_NEW_OUTCOMES and not force:
-        reason = (f"Not enough data — {total_outcomes} outcomes, "
-                  f"need {MIN_NEW_OUTCOMES}. Skipping.")
+    if new_outcomes < MIN_NEW_OUTCOMES and not force:
+        reason = (f"Not enough new data — {new_outcomes} new outcomes since the "
+                  f"active model, need {MIN_NEW_OUTCOMES}. Skipping.")
         if verbose:
             print(f"[retrain] {reason}")
-        db.log_retrain(total_outcomes, None, None, False, reason)
+        db.log_retrain(new_outcomes, None, None, False, reason)
         return {"promoted": False, "reason": reason}
 
     df = _load_frame()
@@ -134,7 +139,6 @@ def run(force=False, verbose=True):
         print(f"[retrain] new model AUC: {new_auc:.4f} (train={len(train)}, test={len(test)})")
 
     # compare to currently active model
-    active = db.get_active_model()
     old_auc = active["auc"] if active else None
     if verbose:
         print(f"[retrain] current deployed AUC: {old_auc}")
@@ -166,7 +170,7 @@ def run(force=False, verbose=True):
         if verbose:
             print(f"[retrain] ✗ {reason}")
 
-    db.log_retrain(total_outcomes, old_auc, new_auc, should_promote, reason)
+    db.log_retrain(new_outcomes, old_auc, new_auc, should_promote, reason)
     elapsed = round(time.time() - t0, 1)
     if verbose:
         print(f"[retrain] done in {elapsed}s")

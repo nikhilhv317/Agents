@@ -1,31 +1,94 @@
 """
 Agent registry + action handlers.
 
-REGISTRY maps agent keys to instances. Add the next agent by importing it and
-adding one line — the API and frontend need no changes because everything
-speaks the shared contract.
+REGISTRY is the one catalogue of every agent: key -> AgentSpec. Add the next
+agent by writing its module and adding one AgentSpec line — it is then listed
+by GET /api/agents and runnable via POST /api/agents/{key}/run with no other
+API changes.
+
+Entry points are resolved LAZILY ("module:function", imported on first run), so
+the app still boots when one agent's heavy deps (torch, langgraph, sklearn) or
+model files are missing — only that agent fails, with a clear error.
 
 ACTION_HANDLERS maps an action `type` to the function that executes it once a
 human approves. This is where a proposed action becomes a real side effect.
 """
-from agents.patient_intelligence import PatientIntelligenceAgent
+from __future__ import annotations
+
+import importlib
+import json
+from dataclasses import dataclass, asdict
+from typing import Literal
+
 import db
 
-REGISTRY = {
-    PatientIntelligenceAgent.key: PatientIntelligenceAgent(),
-    # SmartSchedulingAgent.key: SmartSchedulingAgent(),
-    # ImagingDiagnosticAgent.key: ImagingDiagnosticAgent(),
-}
+
+@dataclass(frozen=True)
+class AgentSpec:
+    key: str
+    name: str
+    role: str
+    description: str
+    entry: str                                  # "module:function", called with **params
+    params: tuple[str, ...] = ()                # accepted keyword params (for listing / docs)
+    input: Literal["json", "files"] = "json"    # "files" agents run via their multipart endpoint
+    admin_only: bool = False
+
+    def load(self):
+        module, func = self.entry.split(":")
+        return getattr(importlib.import_module(module), func)
 
 
-def get_agent(key: str):
+REGISTRY: dict[str, AgentSpec] = {s.key: s for s in [
+    AgentSpec("scheduling", "Smart Scheduling", "Front desk",
+              "Scores a day's appointments for no-show risk (scikit-learn + LangGraph).",
+              "agents.scheduling_agent:run_for_date", params=("day",)),
+    AgentSpec("imaging", "Imaging & Diagnostic", "Doctor",
+              "Two-stage vision screen: dental gate, then YOLO lesion detection.",
+              "agents.imaging_agent:analyze_batch", params=("image_paths", "patient_id"),
+              input="files"),
+    AgentSpec("report", "Report", "Doctor",
+              "Drafts a 3-4 line visit summary from record, imaging and clinical findings.",
+              "agents.report_agent:generate", params=("patient_id", "clinical", "clinical_from_exam")),
+    AgentSpec("patient_intelligence", "Patient Intelligence", "Doctor / Front desk",
+              "Drafts a clinical brief (insights, risks, recommendations) from the record.",
+              "agents.patient_intelligence:run", params=("subject_id",)),
+    AgentSpec("clinical_assistant", "Clinical Assistant", "Doctor",
+              "Drafts a SOAP note, pulling in the latest imaging finding.",
+              "agents.clinical_assistant:draft",
+              params=("patient_id", "complaint", "findings", "propose_actions", "findings_from_exam")),
+    AgentSpec("visit_pipeline", "Visit Pipeline", "Doctor",
+              "Chains Clinical -> Report for one visit, pausing for review at each draft.",
+              "agents.visit_pipeline:start", params=("patient_id", "complaint", "trigger")),
+    AgentSpec("copilot", "Clinic Copilot", "Doctor / Front desk",
+              "Tool-calling chat: the model picks lookups; writes come back as proposals.",
+              "agents.copilot:chat", params=("message", "history")),
+    AgentSpec("retraining", "Model Retraining", "Admin",
+              "Retrains the no-show model on new outcomes; promotes only if AUC holds.",
+              "ml.retrain:run", params=("force",), admin_only=True),
+]}
+
+
+def get_agent(key: str) -> AgentSpec | None:
     return REGISTRY.get(key)
 
 
-# ---- action handlers: run only after human approval -------------------------
+def list_agents() -> list[dict]:
+    return [asdict(s) for s in REGISTRY.values()]
 
-import json
-import db
+
+def entry(key: str):
+    """The callable behind an agent — for the typed endpoints in app.py."""
+    return REGISTRY[key].load()
+
+
+def run(key: str, **params):
+    """Run an agent by key. Pydantic results (the shared contract) come back as dicts."""
+    result = entry(key)(**params)
+    return result.model_dump() if hasattr(result, "model_dump") else result
+
+
+# ---- action handlers: run only after human approval -------------------------
 
 
 def _pid(action):

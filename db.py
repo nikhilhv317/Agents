@@ -184,8 +184,18 @@ def save_decision(appt_id, patient, appt_type, appt_hour, p_attend, decision, re
     from datetime import date as _date
     decided_on = decided_on or _date.today().isoformat()
     conn = connect()
-    conn.execute("INSERT INTO decisions (appt_id,patient,appt_type,appt_hour,p_attend,decision,reminder,decided_on) "
-                 "VALUES (?,?,?,?,?,?,?,?)", (appt_id, patient, appt_type, appt_hour, p_attend, decision, reminder, decided_on))
+    # One decision per appointment per day: a resubmit (double-click, or the
+    # clinician changing their mind) replaces the earlier one instead of
+    # stacking duplicates into Finalized and the Scan queue.
+    existing = conn.execute("SELECT id FROM decisions WHERE appt_id=? AND decided_on=?",
+                            (appt_id, decided_on)).fetchone()
+    if existing:
+        conn.execute("UPDATE decisions SET patient=?,appt_type=?,appt_hour=?,p_attend=?,decision=?,"
+                     "reminder=?,decided_at=datetime('now') WHERE id=?",
+                     (patient, appt_type, appt_hour, p_attend, decision, reminder, existing["id"]))
+    else:
+        conn.execute("INSERT INTO decisions (appt_id,patient,appt_type,appt_hour,p_attend,decision,reminder,decided_on) "
+                     "VALUES (?,?,?,?,?,?,?,?)", (appt_id, patient, appt_type, appt_hour, p_attend, decision, reminder, decided_on))
     conn.commit(); conn.close()
 
 
