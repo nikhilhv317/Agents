@@ -43,7 +43,7 @@ dentaVIS touches all four lightly but leads in none.
 
 ### Do now (biggest gain for the effort)
 
-1. **Evaluation set:** 50–100 real-style cases with expected outputs. Measure the grounding-failure rate, safety violations and whether the Copilot picks the right tool. Run it in CI on every change. Everything else depends on this.
+1. **Evaluation set:** 50–100 real-style cases with expected outputs. Measure the grounding-failure rate, safety violations and whether the Copilot picks the right tool. Run it in CI on every change. Everything else depends on this. *Started: [evals/](../evals/README.md), with 72 cases. First baseline: about 31% of drafts invent a finding, about 19% have a real safety violation, and the Copilot passes 11/12.*
 2. **Citations:** make the model attach a source ID to each sentence (for example `imaging#3` or `visit 2025-07-01`), then check the claim against that source with a small local entailment model. This fixes the "when did it happen" gap and gives reviewers one-click verification.
 3. **A faster, better model:** a GPU, or a quantised 7–8B instruct model through llama.cpp or vLLM. Send simple tasks to the 1.7B model and harder ones to the bigger one.
 

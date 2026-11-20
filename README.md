@@ -151,3 +151,10 @@ since it reads an image rather than a record.
 ## Strategy
 
 Where the project stands against the market, and a prioritised roadmap: [docs/STRATEGY.md](docs/STRATEGY.md).
+
+## Evaluations
+
+`python evals/run.py` runs 44 offline checker cases (also in CI on every push).
+`python evals/run.py --suite live` measures the drafting agents' grounding-failure
+and safety-violation rates and the Copilot's tool choice on the local model.
+Cases, known gaps and the current baseline: [evals/README.md](evals/README.md).

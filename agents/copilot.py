@@ -1,4 +1,4 @@
-"""
+r"""
 Clinic Copilot — a tool-calling agent (LangGraph + local Ollama model).
 
 The other agents are fixed pipelines: the CODE decides every step. Here the

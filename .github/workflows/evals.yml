@@ -1,0 +1,27 @@
+name: evals
+
+# Offline checker suite (evals/cases/checks.yaml) on every push and pull request.
+# The live suites need a local Ollama model, so they run on a developer machine:
+#   python evals/run.py --suite live
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: evals/requirements-ci.txt
+      - run: pip install -r evals/requirements-ci.txt
+      - run: python evals/run.py --suite checks --json evals-checks.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evals-checks
+          path: evals-checks.json

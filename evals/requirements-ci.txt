@@ -1,0 +1,6 @@
+# Just what the offline `checks` suite imports — no torch, sklearn or Ollama.
+langgraph>=0.1
+langgraph-checkpoint-sqlite>=2.0
+langchain-core>=0.2
+pydantic>=2.6
+pyyaml>=6.0

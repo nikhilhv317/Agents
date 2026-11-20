@@ -1,0 +1,429 @@
+# Offline checker cases — no model needed; CI runs these on every push.
+#
+# Each case feeds a hand-written draft to one of the deterministic checks and
+# states what it SHOULD flag. Expectations were written from clinical reading
+# of the draft, not copied from the checker's output.
+#
+# kind:
+#   soap         clinical_assistant.ground_soap(patient, complaint, findings, soap, exam)
+#   report       report_agent.ground_report(patient, imaging, clinical, summary, exam)
+#   grounding    grounding.check(draft, sources, exam, history, allow_negated)
+#                (allow_negated: true is how the Copilot calls it)
+#   safety       visit_pipeline.safety_check(patient, text) -> codes:
+#                  no_allergy_claim | negated:<allergy> | missing_allergy:<allergy>
+#                  | missing_condition:<condition>
+#   action_claim copilot._check_action_claims(answer, actions) -> true if the
+#                answer claims an action that wasn't created
+# expect: exact set of flagged claim names / codes ([] = should be clean), or
+#         true/false for action_claim.
+# known_gap: true marks a known limitation. The case documents what the check
+#         SHOULD do; it is reported separately and doesn't fail CI.
+#
+# Patients are the seeded roster (db.SEED_PATIENTS / SEED_VISITS):
+#   1 Ramesh  Penicillin; Type 2 diabetes, Hypertension; history: gingivitis, caries/pulpitis #46
+#   2 Anita   none; history: sound dentition ("No active caries"), impacted #38
+#   3 Suresh  Hypertension; history: chronic periodontitis, mobility #31
+#   4 Kavya   none; history: early caries #16
+#   5 Arjun   Ibuprofen
+#   7 Vijay   Type 2 diabetes; history: advanced caries #36, root canal started
+#   8 Deepa   Latex; history: swollen gum, localised abscess #45, "Latex-free gloves"
+#   9 Karthik Asthma
+#   11 Sneha  Pregnant (2nd trimester)
+#   12 Manoj  Penicillin; Hypertension, Bleeding disorder
+
+# ---- SOAP note grounding ------------------------------------------------------
+
+- id: soap-clean-history-in-subjective
+  kind: soap
+  patient: 1
+  complaint: "pain lower right molar"
+  findings: ""
+  soap:
+    subjective: "Patient reports pain in the lower right molar. History of deep caries #46 treated with a composite restoration."
+    objective: "No clinical examination findings recorded today."
+    assessment: "Possible recurrent caries #46 given history."
+    plan: ["Clinical examination and periapical radiograph of #46"]
+  expect: []
+  why: History may be cited in Subjective; the hedged assessment is not a claim.
+
+- id: soap-invented-exam
+  kind: soap
+  patient: 1
+  complaint: "pain lower right molar"
+  findings: ""
+  soap:
+    subjective: "Patient reports pain in the lower right molar."
+    objective: "Clinical examination reveals tenderness on percussion and mild swelling around #46."
+    assessment: "Symptomatic tooth #46."
+    plan: ["Radiograph"]
+  expect: ["examination claimed", "tenderness", "percussion", "swelling", "tooth/site 46"]
+  why: The real failure seen in testing — an exam nobody performed, with invented findings.
+
+- id: soap-past-diagnosis-as-current
+  kind: soap
+  patient: 1
+  complaint: "bleeding gums"
+  findings: ""
+  soap:
+    subjective: "Patient reports bleeding gums."
+    objective: "Generalised gingivitis present today."
+    assessment: "Gingivitis, consistent with the previous diagnosis."
+    plan: ["Scaling"]
+  expect: ["gingivitis"]
+  why: Gingivitis is only in a 2024 visit; Objective must describe today. Assessment may cite history.
+
+- id: soap-exam-given-clean
+  kind: soap
+  patient: 1
+  complaint: "pain lower right molar"
+  findings: "Tender to percussion on #46, no swelling."
+  exam: true
+  soap:
+    subjective: "Patient reports pain in the lower right molar."
+    objective: "Examination reveals tenderness to percussion on #46; no swelling."
+    assessment: "Symptomatic #46, likely pulpitis."
+    plan: ["Periapical radiograph"]
+  expect: []
+  why: Everything in Objective comes from the clinician's typed findings.
+
+- id: soap-negated-findings-without-exam
+  kind: soap
+  patient: 2
+  complaint: "routine check-up"
+  findings: ""
+  soap:
+    subjective: "Routine check-up, no complaints."
+    objective: "No caries or swelling noted."
+    assessment: "Routine recall."
+    plan: ["Prophylaxis"]
+  expect: ["caries", "swelling"]
+  why: By design a SOAP note may not say "no swelling" without an exam — that also claims an examination.
+
+- id: soap-hedged-assessment
+  kind: soap
+  patient: 2
+  complaint: "wisdom tooth ache"
+  findings: ""
+  soap:
+    subjective: "Patient reports a wisdom tooth ache."
+    objective: "No exam findings entered."
+    assessment: "Rule out pericoronitis; possible infection around impacted #38."
+    plan: ["Clinical exam", "OPG"]
+  expect: []
+  why: Hedged terms are questions, not findings; #38 is on record.
+
+- id: soap-invented-measurement
+  kind: soap
+  patient: 3
+  complaint: "loose tooth"
+  findings: "Mobility grade 2 on #31."
+  exam: true
+  soap:
+    subjective: "Patient reports a loose tooth."
+    objective: "Examination shows mobility on #31 with 6 mm pocketing."
+    assessment: "Chronic periodontitis with mobility."
+    plan: ["Periodontal charting"]
+  expect: ["pocketing", "6 mm"]
+  why: Mobility and #31 were entered; the pocket depth was invented.
+
+- id: soap-plan-wording-in-assessment
+  kind: soap
+  patient: 1
+  complaint: "bleeding gums"
+  findings: "Generalised bleeding on probing."
+  exam: true
+  known_gap: true
+  soap:
+    subjective: "Patient reports bleeding gums."
+    objective: "Generalised bleeding on probing."
+    assessment: "Gingivitis. Need for intensified plaque control."
+    plan: ["Oral hygiene instruction"]
+  expect: []
+  why: '"plaque control" is advice, not a finding of plaque. Seen in the live drafting baseline (false alarm).'
+
+- id: soap-invented-tooth-in-hedged-sentence
+  kind: soap
+  patient: 4
+  complaint: "sensitivity upper left"
+  findings: ""
+  soap:
+    subjective: "Patient reports sensitivity in the upper left."
+    objective: "No examination findings entered."
+    assessment: "Sensitivity likely related to early caries on #26."
+    plan: ["Examination"]
+  expect: ["tooth/site 26"]
+  why: The hedge covers "caries", but #26 is not on record anywhere (history has #16).
+
+# ---- report grounding ---------------------------------------------------------
+
+- id: report-clean
+  kind: report
+  patient: 7
+  imaging: "Disease Detected: Advanced caries (x1, 64%)"
+  clinical: "Root canal on #36 continued; tooth tender to percussion."
+  exam: true
+  summary: "Vijay Kumar, 52y M with Type 2 diabetes. Imaging shows advanced caries; root canal on #36 continued with tenderness to percussion. Monitor for infection given diabetes."
+  expect: []
+  why: Every finding traces to imaging or the clinician's findings.
+
+- id: report-history-only-finding
+  kind: report
+  patient: 8
+  imaging: "Healthy — no findings"
+  clinical: "Routine cleaning done."
+  exam: true
+  summary: "Abscess on #45 noted; cleaning completed."
+  expect: ["abscess", "tooth/site 45"]
+  why: The abscess is from a 2025 visit; the report prompt doesn't include history.
+
+- id: report-unsourced-exam
+  kind: report
+  patient: 2
+  imaging: "No imaging findings on record."
+  clinical: ""
+  summary: "Patient has generalised plaque and calculus; on examination the gingiva bleed on probing."
+  expect: ["examination claimed", "plaque", "calculus", "bleeding"]
+  why: Nothing was entered for this visit, so every finding is invented.
+
+# ---- raw grounding check (Copilot-style and edge cases) -----------------------
+
+- id: grounding-negation-allowed-for-copilot
+  kind: grounding
+  allow_negated: true
+  sources: "Allergies: Penicillin\nConditions: Type 2 diabetes, Hypertension\n2024-11-02: Bleeding gums Generalised chronic gingivitis Scaling + polishing"
+  draft: "Ramesh has no caries on record and a history of gingivitis."
+  expect: []
+  why: '"No caries on record" is a statement about the records.'
+
+- id: grounding-invented-infection
+  kind: grounding
+  allow_negated: true
+  sources: "2025-07-02: Swollen gum Localised abscess #45 Drainage + antibiotics Latex-free gloves."
+  draft: "Deepa currently has an active infection."
+  expect: ["infection"]
+  why: The record shows an abscess treated a year ago, not an infection now.
+
+- id: grounding-past-finding-stated-as-current
+  kind: grounding
+  allow_negated: true
+  known_gap: true
+  sources: "2025-07-02: Swollen gum Localised abscess #45 Drainage + antibiotics Latex-free gloves."
+  draft: "Deepa has an active abscess on #45 right now."
+  expect: ["abscess"]
+  why: Word matching can't see WHEN — "abscess" is in the sources, so a 2025 finding passes as current. Strategy item 2 (citations) targets this.
+
+- id: grounding-hedge-if
+  kind: grounding
+  sources: ""
+  draft: "If swelling returns, consider drainage."
+  expect: []
+  why: A conditional is a plan, not a finding.
+
+- id: grounding-term-outside-vocabulary
+  kind: grounding
+  known_gap: true
+  sources: "Wisdom tooth ache Impacted #38"
+  draft: "Patient has pericoronitis around #38."
+  expect: ["pericoronitis"]
+  why: The checker only knows its finding vocabulary; pericoronitis isn't in it.
+
+- id: grounding-hedge-stops-at-comma
+  kind: grounding
+  sources: ""
+  draft: "Patient may have caries, and swelling is present."
+  expect: ["swelling"]
+  why: The hedge covers its own clause only; "swelling is present" is asserted.
+
+- id: grounding-hedge-leaks-without-comma
+  kind: grounding
+  known_gap: true
+  sources: ""
+  draft: "Patient may have caries and has visible swelling."
+  expect: ["swelling"]
+  why: Without a comma the "may" hedge spills onto the asserted swelling.
+
+- id: grounding-invented-decimal-measurement
+  kind: grounding
+  sources: "Findings: probing depth 4 mm on #16"
+  draft: "Probing depth 4.5 mm on #16."
+  expect: ["4.5 mm"]
+  why: A different measurement than the one recorded.
+
+- id: grounding-tooth-number-formats
+  kind: grounding
+  sources: "Complaint: pain\nFindings: deep caries #46"
+  draft: "Pain reported at tooth 46."
+  expect: []
+  why: '"tooth 46" and "#46" are the same tooth.'
+
+- id: grounding-exam-claim-without-findings
+  kind: grounding
+  sources: "Complaint: tender tooth"
+  draft: "On examination, the tooth is tender."
+  expect: ["examination claimed"]
+  why: Tenderness was reported by the patient; no examination was recorded.
+
+- id: grounding-history-only-finding
+  kind: grounding
+  sources: "Complaint: routine cleaning"
+  history: "2025-07-02: Swollen gum Localised abscess #45"
+  draft: "Swelling present over #45."
+  expect: ["swelling", "tooth/site 45"]
+  why: Both come only from a past visit.
+
+- id: grounding-negation-not-allowed-in-notes
+  kind: grounding
+  sources: "Complaint: check-up"
+  draft: "No bleeding on probing."
+  expect: ["bleeding"]
+  why: In a note, "no bleeding on probing" claims an examination that wasn't recorded.
+
+# ---- safety check (allergies and conditions vs the record) --------------------
+
+- id: safety-latex-free-gloves-ok
+  kind: safety
+  patient: 8
+  text: "Allergies: Latex. Scaling done with latex-free gloves."
+  expect: []
+  why: Latex-free gloves are correct care for a latex allergy.
+
+- id: safety-patient-described-latex-free
+  kind: safety
+  patient: 8
+  text: "Patient is latex-free; scaling completed."
+  expect: ["negated:Latex"]
+  why: The real failure seen in testing — the allergy turned into its opposite.
+
+- id: safety-no-known-allergies-wrong
+  kind: safety
+  patient: 1
+  text: "No known allergies. Type 2 diabetes and hypertension noted."
+  expect: ["no_allergy_claim", "missing_allergy:Penicillin"]
+  why: Ramesh is allergic to penicillin.
+
+- id: safety-condition-paraphrase
+  kind: safety
+  patient: 1
+  known_gap: true
+  text: "Penicillin allergy. Diabetic, with hypertension."
+  expect: []
+  why: '"Diabetic" does mention the diabetes, but the check needs the exact phrase "Type 2 diabetes" (false alarm).'
+
+- id: safety-all-mentioned
+  kind: safety
+  patient: 12
+  text: "Allergic to penicillin. Hypertension and bleeding disorder: plan local haemostatic measures."
+  expect: []
+  why: Allergy and both conditions are present.
+
+- id: safety-not-allergic-to
+  kind: safety
+  patient: 12
+  text: "Not allergic to penicillin. Hypertension and bleeding disorder noted."
+  expect: ["negated:Penicillin"]
+  why: Contradicts the recorded allergy.
+
+- id: safety-condition-with-parentheses
+  kind: safety
+  patient: 11
+  text: "Pregnant (2nd trimester): avoid elective radiographs."
+  expect: []
+  why: The condition is stated word for word.
+
+- id: safety-pregnancy-paraphrase
+  kind: safety
+  patient: 11
+  known_gap: true
+  text: "Pregnant 26-year-old female in her second trimester; gentle scaling performed."
+  expect: []
+  why: The pregnancy and trimester are both stated, just not as the exact record text. Seen in the live drafting baseline (false alarm).
+
+- id: safety-no-allergic-reactions
+  kind: safety
+  patient: 8
+  known_gap: true
+  text: "Latex allergy on file; no allergic reactions during treatment."
+  expect: []
+  why: '"no allergic reactions" is read as "no allergies". Seen in the live drafting baseline (false alarm).'
+
+- id: safety-prescribing-the-allergen
+  kind: safety
+  patient: 5
+  known_gap: true
+  text: "Ibuprofen allergy noted. Prescribed ibuprofen 400 mg for pain."
+  expect: ["prescribed:Ibuprofen"]
+  why: The draft prescribes the drug the patient is allergic to; the check only looks for the allergy being mentioned.
+
+- id: safety-no-allergies-on-record
+  kind: safety
+  patient: 2
+  text: "No known allergies."
+  expect: []
+  why: Anita has no recorded allergies or conditions.
+
+- id: safety-missing-condition
+  kind: safety
+  patient: 9
+  text: "Plaque removed; oral hygiene advice given."
+  expect: ["missing_condition:Asthma"]
+  why: Asthma is on the record and not mentioned.
+
+- id: safety-denies-allergy
+  kind: safety
+  patient: 1
+  text: "Patient denies penicillin allergy. Type 2 diabetes, hypertension."
+  expect: ["negated:Penicillin"]
+  why: Contradicts the recorded allergy.
+
+- id: safety-nkda-wrong
+  kind: safety
+  patient: 8
+  text: "NKDA. Routine scaling."
+  expect: ["no_allergy_claim", "missing_allergy:Latex"]
+  why: NKDA (no known drug allergies) for a latex-allergic patient.
+
+# ---- Copilot action-claim check ----------------------------------------------
+
+- id: action-claim-without-action
+  kind: action_claim
+  answer: "I've flagged Ramesh Kulkarni for follow-up."
+  actions_created: 0
+  expect: true
+  why: The real failure seen in testing — the tool call failed but the model said it was done.
+
+- id: action-claim-with-action
+  kind: action_claim
+  answer: "I've flagged Ramesh Kulkarni for follow-up."
+  actions_created: 1
+  expect: false
+  why: An action really was created.
+
+- id: action-plain-answer
+  kind: action_claim
+  answer: "Ramesh Kulkarni is allergic to Penicillin."
+  actions_created: 0
+  expect: false
+  why: No action is claimed.
+
+- id: action-claim-awaiting-approval
+  kind: action_claim
+  answer: "A follow-up has been proposed and is awaiting your approval."
+  actions_created: 0
+  expect: true
+  why: Claims a pending proposal that doesn't exist.
+
+- id: action-claim-other-wording
+  kind: action_claim
+  known_gap: true
+  answer: "Done. Ramesh will get an SMS reminder tomorrow."
+  actions_created: 0
+  expect: true
+  why: Claims a message was arranged; the check's word list doesn't cover this phrasing.
+
+- id: action-negated-claim
+  kind: action_claim
+  known_gap: true
+  answer: "I couldn't find that patient, so nothing was proposed."
+  actions_created: 0
+  expect: false
+  why: '"nothing was proposed" is honest, but the word "proposed" triggers the warning (false alarm).'

@@ -106,12 +106,18 @@ def safety_check(patient: dict, draft_text: str) -> list[str]:
                             text, re.IGNORECASE)
         if negated:
             warnings.append(f"Recorded allergy '{a}' appears NEGATED in the draft: \"{negated.group(0)}\".")
-        elif not re.search(rf"\b{t}\b", text, re.IGNORECASE):
+        elif not _mentions(text, a):
             warnings.append(f"Recorded allergy '{a}' is not mentioned in the draft.")
     for c in _split_terms(patient.get("conditions")):
-        if not re.search(rf"\b{re.escape(c)}\b", text, re.IGNORECASE):
+        if not _mentions(text, c):
             warnings.append(f"Recorded condition '{c}' is not mentioned in the draft.")
     return warnings
+
+
+def _mentions(text: str, term: str) -> bool:
+    # (?<!\w)/(?!\w), not \b: a term ending in ")" like "Pregnant (2nd trimester)"
+    # never matched \b...\b, so it was always reported missing (found by evals/).
+    return bool(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, re.IGNORECASE))
 
 
 def _grounding_soap(state: VisitState, soap: dict) -> list[dict]:
