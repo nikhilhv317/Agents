@@ -158,3 +158,32 @@ Where the project stands against the market, and a prioritised roadmap: [docs/ST
 `python evals/run.py --suite live` measures the drafting agents' grounding-failure
 and safety-violation rates and the Copilot's tool choice on the local model.
 Cases, known gaps and the current baseline: [evals/README.md](evals/README.md).
+
+## MCP server
+
+`mcp_server.py` exposes the agent registry and the Copilot's tools over the
+Model Context Protocol (stdio), so other AI assistants can use dentaVIS:
+`list_agents`, `run_agent` (admin-only and file-upload agents excluded), the
+read tools (`find_patients`, `get_patient_record`, `get_patient_notes`,
+`get_imaging_findings`, `search_patient_history`, `get_schedule`) and the
+`propose_*` tools, which only create actions a clinician approves in dentaVIS.
+
+Claude Code:
+
+```bat
+claude mcp add dentavis -- D:\medrag_transfer\.venv\Scripts\python.exe D:\Agents\mcp_server.py
+```
+
+Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{"mcpServers": {"dentavis": {
+  "command": "D:\medrag_transfer\.venv\Scripts\python.exe",
+  "args": ["D:\Agents\mcp_server.py"],
+  "env": {"DPMS_DB_PATH": "D:\Agents\dpms.db"}}}}
+```
+
+**Privacy:** the server itself is local, but whatever it returns goes to the
+client that called it. A cloud-hosted assistant therefore receives patient data,
+which gives up the "nothing leaves the clinic" property. Use de-identified data,
+or a client running a local model, for real patients.
