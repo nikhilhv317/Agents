@@ -69,6 +69,15 @@ class VisitState(TypedDict, total=False):
     outcome: str            # done | rejected_soap | rejected_report
 
 
+def _soap_prose(soap: dict) -> str:
+    """The approved note as plain sentences, for the Report agent: no S:/O:/A:/P:
+    labels or source tags, which the model otherwise copies as citations ([P], [C])."""
+    from agents.grounding import strip_tags
+    parts = [soap.get("subjective", ""), soap.get("objective", ""), soap.get("assessment", "")]
+    plan = "; ".join(soap.get("plan") or [])
+    return strip_tags(" ".join(p.strip() for p in parts if p.strip()) + (f" Plan: {plan}." if plan else ""))
+
+
 def _soap_text(soap: dict) -> str:
     return (f"S: {soap.get('subjective', '')}\nO: {soap.get('objective', '')}\n"
             f"A: {soap.get('assessment', '')}\nP: " + "; ".join(soap.get("plan") or []))
@@ -92,7 +101,7 @@ def _grounding_report(state: VisitState, summary: str) -> list[dict]:
     """Same check the Report agent runs on its own drafts; re-run so edits are checked."""
     from agents import report_agent
     return report_agent.ground_report(db.get_patient(state["patient_id"]), state.get("imaging", ""),
-                                      _soap_text(state["soap"]), summary)
+                                      _soap_prose(state["soap"]), summary)
 
 
 def _record(patient_id: int) -> dict:
@@ -151,7 +160,8 @@ def draft_report(state: VisitState) -> dict:
     from agents import report_agent
     if state.get("report_id"):   # a redraft replaces the previous draft
         db.update_report(state["report_id"], status="discarded")
-    r = report_agent.generate(state["patient_id"], _soap_text(state["soap"]), clinical_from_exam=False)
+    # the approved SOAP note becomes the report's [F] source, as plain prose
+    r = report_agent.generate(state["patient_id"], _soap_prose(state["soap"]), clinical_from_exam=False)
     _log(state, f"Report agent drafted report #{r['report_id']} — waiting for review")
     return {"report_id": r["report_id"], "report_summary": r["ai_summary"],
             "report_source": r["source"]}

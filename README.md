@@ -187,3 +187,81 @@ Claude Desktop (`claude_desktop_config.json`):
 client that called it. A cloud-hosted assistant therefore receives patient data,
 which gives up the "nothing leaves the clinic" property. Use de-identified data,
 or a client running a local model, for real patients.
+
+## Voice-to-SOAP
+
+**Create Report → 🎙 Dictate SOAP note** records in the browser.
+`POST /api/clinical/voice` transcribes the recording on this machine with
+faster-whisper ("small"; GPU if CTranslate2's CUDA 12 libraries are present,
+otherwise CPU int8, about 14 s for 17 s of audio). It splits the dictation at
+"on examination…" into complaint and findings, then drafts the SOAP note
+through the Clinical Assistant, so the note is grounded, safety-checked and
+cited. Audio is deleted after transcription.
+
+## Per-patient memory
+
+`agents/memory.py` embeds every visit, chart note and finalized report with
+the local `nomic-embed-text` model and searches them by meaning. The index is
+built lazily the first time a patient is searched. Used by Patient
+Intelligence, the SOAP note prompt (for long histories) and the Copilot's
+`search_patient_history` tool. Falls back to keyword matching if the embedding
+model isn't available.
+
+## Tracing and health
+
+Every agent run, model call (with token counts), Copilot tool call, pipeline
+step and approval (with who approved) is recorded as an OpenTelemetry span in
+the local database. **Settings → System health & agent traces**, or
+`GET /api/health` and `GET /api/traces`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to
+also export to a collector.
+
+## Data exchange
+
+| What | Endpoint |
+|---|---|
+| Export a chart as FHIR R4 Bundle (validated) | `GET /api/patients/{id}/fhir` (FHIR button on Patients) |
+| Import FHIR Patient / Bundle | `POST /api/interop/fhir` |
+| HL7 v2 ADT^A04/A08 registration feed (returns ACK) | `POST /api/interop/hl7` (raw message body) |
+| Practice-management CSV export | `POST /api/interop/csv/patients`, `/csv/appointments` |
+| DICOM image → imaging agent | `POST /api/imaging/dicom` |
+
+Imports reuse an existing chart only when **both** name and phone match.
+
+## Roles, encryption and clinic separation
+
+- **Roles:**
+  - **admin:** everything, including staff, data imports and retraining.
+  - **clinician:** clinical drafts, approvals, report sign-off and deleting charts.
+  - **front_desk:** schedule, patients and booking.
+  Role and active status are checked on every request.
+- **Encryption at rest:** contact details and clinical text (allergies,
+  conditions, visits, notes, reports, scan images) are Fernet-encrypted in
+  SQLite. The key is `DPMS_ENC_KEY`, or `dpms.key` next to the database (created
+  on first run). **Back the key up separately; without it the encrypted fields
+  can't be recovered.** Existing databases are encrypted in place on first
+  start.
+- **Clinic separation:** staff only see patients of their own clinic.
+- **`.env`:** loaded at startup. A persistent `JWT_SECRET` is written there if
+  missing, so logins survive restarts.
+
+## Fine-tuned model (LoRA)
+
+`ml/lora/` builds a synthetic, grounded training set from the app's own
+prompts, trains a LoRA adapter on Qwen3-1.7B, and packages it for Ollama as
+`dentavis-clinical`:
+
+```bat
+python ml\lora\make_data.py
+python ml\lora\train.py --epochs 2
+python ml\lora\train.py --merge
+python ml\lora\to_ollama.py
+python evals\run.py --suite drafting --model dentavis-clinical
+```
+
+Results (`evals/README.md`): on the drafting evals the fine-tuned model has 0%
+invented content, 0% safety violations, 0% citation failures and 0/8
+clinical-relevance misses. The base qwen3:1.7b scores 19%, 6%, 75% and 1/8. The
+SOAP and report agents use it automatically when `ml/lora/out/merged` exists
+(it runs through transformers, because Ollama 0.40 on Windows can't import
+safetensors); otherwise they use qwen3:1.7b. It was trained on synthetic data
+only.

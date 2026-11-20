@@ -50,11 +50,19 @@ TIERS: dict[str, str] = {
                                                            "ml", "lora", "out", "merged")),
 }
 
-# task name -> tier, set from measurements (evals/README.md "Model routing").
+# The fine-tuned model wins every drafting metric (evals/README.md: 0% invented
+# content / safety / citation failures, 0/8 relevance misses vs 19% / 6% / 75% /
+# 1/8 for the base) — but it's a 3.4 GB local build, not in git. Route to it only
+# when it's actually there; a fresh clone or the Docker image uses the base model.
+_LORA_READY = (TIERS["lora"].startswith("hf:") and os.path.isdir(TIERS["lora"][3:])) or \
+              (not TIERS["lora"].startswith("hf:") and bool(os.getenv("LORA_MODEL")))
+_DRAFTING_TIER = "lora" if _LORA_READY else "fast"
+
+# task name -> tier, set from measurements (evals/README.md "How the numbers moved").
 TASK_TIERS: dict[str, str] = {
-    "report_summary":       "fast",   # report_agent.py — 3-4 line summary
-    "patient_brief":        "fast",   # patient_intelligence.py — clinical brief
-    "soap_note":            "fast",   # clinical_assistant.py — SOAP note
+    "report_summary":       _DRAFTING_TIER,   # report_agent.py — 3-4 line summary
+    "patient_brief":        "fast",   # patient_intelligence.py — clinical brief (not trained on)
+    "soap_note":            _DRAFTING_TIER,   # clinical_assistant.py — SOAP note
     "scheduling_reminder":  "fast",   # scheduling_agent.py — SMS reminder text
 }
 

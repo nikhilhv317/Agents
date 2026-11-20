@@ -61,6 +61,40 @@ dentaVIS touches all four lightly but leads in none.
 10. **Regulatory path for the vision model:** a clinical validation study, then CDSCO (India) or FDA 510(k) clearance, before claiming it detects anything.
 11. **Hardening:** Postgres, role-based access, encryption of stored data, separate data per clinic, and filtering of untrusted text before it reaches the model.
 
+## Status: November 2026
+
+The assessment above is kept as written. Here's what has been done about each item since, with measured
+numbers from [evals/](../evals/README.md):
+
+| # | Item | Status | Evidence |
+|---|---|---|---|
+| 1 | Evaluation set | ✅ Done | 92 cases (62 offline checker cases, 16 drafting, 14 Copilot). The offline suite and unit tests run in CI on every push. |
+| 2 | Citations | ✅ Done, deterministic | Every draft sentence carries a source tag. Each claim is checked against the source it cites, and the Objective may only cite today's sources. A timing check flags past findings stated as current. The NLI model wasn't installed: word-level checks against the cited source cover the gap that was listed. |
+| 3 | Faster, better model | ✅ Routing done | The GPU already runs qwen3:1.7b at ~3 s per draft (not 30–100 s). Tiers `fast` / `strong` / `lora`; measured qwen2.5:3b worse on grounding, so routing stays on 1.7B. |
+| 4 | Voice-to-SOAP | ✅ Done | Local faster-whisper (CPU int8; GPU when CUDA 12 libraries are present). Dictation → complaint and findings → grounded SOAP. |
+| 5 | Memory per patient | ✅ Done | `nomic-embed-text` semantic search over visits, notes and reports. Used by Patient Intelligence, SOAP context and a Copilot tool. |
+| 6 | MCP server | ✅ Done | `mcp_server.py` (stdio): the registry, the Copilot's read tools, and proposal-only write tools. |
+| 7 | Tracing | ✅ Done | OpenTelemetry spans stored locally, with optional OTLP export; `/api/traces`, `/api/health`, Settings page. |
+| 8 | Interoperability | ✅ Done (generic) | FHIR R4 export/import (validated), HL7 v2 ADT^A04/A08, DICOM import, CSV patients/appointments. No connector for a named commercial PMS, because there's no vendor API access. |
+| 9 | Fine-tuning | ✅ Done (synthetic data) | LoRA r=16 on Qwen3-1.7B, 2,000 synthetic grounded examples, 30 min on the laptop GPU. Drafting evals against the base model: invented content 0% vs 19%, safety 0% vs 6%, citation failures 0% vs 75%, relevance misses 0/8 vs 1/8; also correct on held-out allergy/condition combinations. Now the default for SOAP notes and reports when the local build is present (otherwise the base model is used). It was trained on synthetic data, not real notes, and its plans are still partly templated. |
+| 10 | Regulatory path | 📄 Planned | [VALIDATION_PROTOCOL.md](VALIDATION_PROTOCOL.md): study design, sample size, reader study, CDSCO/510(k) route. A study and clearance can't be produced in code. |
+| 11 | Hardening | ✅ Done, except Postgres | Roles (admin / clinician / front desk), field-level encryption of clinical text, clinic separation, untrusted-text filtering, `.env` with a persistent JWT secret. The Postgres port was deferred by decision; SQLite is kept. |
+
+Technical gaps above, now:
+- **Model speed:** solved on this hardware (GPU).
+- **No evaluations:** solved.
+- **Grounding only matched words:** citations and the timing check added.
+- **No connections to other systems:** added.
+- **No tests or CI:** added.
+- **Monitoring and encryption:** added.
+- **Prompt injection:** filtered and fenced, with a Copilot injection eval case.
+
+Still open:
+- Postgres.
+- A real PMS vendor connector.
+- Clinical validation of the vision model.
+- Training on real de-identified notes (the adapter learned from synthetic cases; its plans are still partly templated).
+
 ## Suggested strategy
 
 Don't sell it as "AI that reads X-rays." Sell it as **a private AI assistant for the whole visit, where nothing leaves the clinic**: voice → grounded SOAP → report → recall, with every AI claim cited and approved by a clinician. Start with privacy-sensitive or low-connectivity clinics, such as Indian private practices and dental chains. That's where cloud competitors are weakest and the local-first design is strongest.
