@@ -259,21 +259,24 @@ def tools_node(state: CopilotState) -> dict:
     last: AIMessage = state["messages"][-1]
     grounded = _grounded_patient_ids(state["messages"][:-1])
     out, steps, actions = [], [], []
+    from tracing import span
     for call in last.tool_calls:
         t = TOOLS.get(call["name"])
-        try:
-            if t is None:
-                raise ValueError(f"unknown tool '{call['name']}'")
-            pid = call["args"].get("patient_id")
-            if pid is not None and int(pid) not in grounded:
-                known = sorted(grounded | _grounded_patient_ids(out))
-                hint = (f" Ids returned so far: {known} — call {call['name']} again with one of them."
-                        if known else " Call find_patients (or get_schedule) first and use an id it returns.")
-                raise ValueError(f"patient_id {pid} hasn't come from a lookup.{hint}")
-            result = t.invoke(call["args"])
-            ok = True
-        except Exception as e:   # bad args, unknown patient, bad date -> tell the model
-            result, ok = {"error": str(e)}, False
+        with span("copilot.tool", tool=call["name"], args=json.dumps(call["args"], default=str)[:300]) as sp:
+            try:
+                if t is None:
+                    raise ValueError(f"unknown tool '{call['name']}'")
+                pid = call["args"].get("patient_id")
+                if pid is not None and int(pid) not in grounded:
+                    known = sorted(grounded | _grounded_patient_ids(out))
+                    hint = (f" Ids returned so far: {known} — call {call['name']} again with one of them."
+                            if known else " Call find_patients (or get_schedule) first and use an id it returns.")
+                    raise ValueError(f"patient_id {pid} hasn't come from a lookup.{hint}")
+                result = t.invoke(call["args"])
+                ok = True
+            except Exception as e:   # bad args, unknown patient, bad date -> tell the model
+                result, ok = {"error": str(e)}, False
+            sp.set_attribute("ok", ok)
         text = json.dumps(result, default=str, ensure_ascii=False)
         # tool results carry database text a patient may have typed — fence it
         out.append(ToolMessage(content=fence(text[:MAX_RESULT_CHARS], "tool_result"),

@@ -86,9 +86,17 @@ def entry(key: str):
 
 
 def run(key: str, **params):
-    """Run an agent by key. Pydantic results (the shared contract) come back as dicts."""
-    result = entry(key)(**params)
-    return result.model_dump() if hasattr(result, "model_dump") else result
+    """Run an agent by key. Pydantic results (the shared contract) come back as dicts.
+    Every run is traced (tracing.py): agent, which params were given, outcome."""
+    from tracing import span
+    with span("agent.run", agent=key, params=",".join(sorted(params)),
+              patient_id=params.get("patient_id") or params.get("subject_id")) as s:
+        result = entry(key)(**params)
+        result = result.model_dump() if hasattr(result, "model_dump") else result
+        if isinstance(result, dict):
+            s.set_attribute("source", str(result.get("source", "")))
+            s.set_attribute("unsupported", len(result.get("unsupported") or []))
+        return result
 
 
 # ---- action handlers: run only after human approval -------------------------
@@ -174,7 +182,10 @@ def execute_action(action_id: int, approved_by: str | None = None) -> str:
     if action["status"] != "proposed":
         return f"Action already {action['status']}."
     handler = ACTION_HANDLERS.get(action["type"])
-    message = handler(action) if handler else f"Executed: {action['label']}"
+    from tracing import span
+    with span("action.approve", action_id=action_id, type=action["type"], agent=action["agent"],
+              subject=action["subject"], approved_by=approved_by or ""):
+        message = handler(action) if handler else f"Executed: {action['label']}"
     db.set_action_status(action_id, "executed")
     # record WHO approved — an agent proposed it, a named person signed it off
     db.add_log(action["agent"], action["subject"],

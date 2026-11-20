@@ -241,11 +241,15 @@ def _sync_status(run_id: int) -> dict:
 
 def _execute(run_id: int, graph_input):
     """Worker-thread body: advance the graph until it pauses or ends."""
+    from tracing import span
     run = db.get_pipeline_run(run_id)
     try:
         db.update_pipeline_run(run_id, status="running", error=None)
-        _graph.invoke(graph_input, _config(run))
-        run = _sync_status(run_id)
+        with span("pipeline.step", run_id=run_id, patient_id=run["patient_id"],
+                  resume=str(getattr(graph_input, "resume", "") or "")[:200]) as sp:
+            _graph.invoke(graph_input, _config(run))
+            run = _sync_status(run_id)
+            sp.set_attribute("status", run["status"])
         # an image was approved while we were drafting: redraft so the note covers it
         while run["status"] == "awaiting_soap" and run["rerun_requested"]:
             db.update_pipeline_run(run_id, rerun_requested=0)

@@ -42,3 +42,4 @@ ollama>=0.2                     # llm.py — direct client for complete_json()
 faster-whisper>=1.1             # agents/voice.py — local Whisper for voice-to-SOAP (audio
                                  # decoded with PyAV directly; works with PyAV 19+)
 mcp>=2.0                        # mcp_server.py — Model Context Protocol server (stdio)
+opentelemetry-sdk>=1.20             # tracing.py — spans stored locally; OTLP export optional

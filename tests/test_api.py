@@ -95,3 +95,21 @@ def test_report_generate_and_finalize_adds_visit(client, admin):
     assert r.status_code == 200 and r.json()["status"] == "draft"
     assert client.post(f"/api/reports/{r.json()['report_id']}/finalize", headers=admin).status_code == 200
     assert len(db.get_patient(4)["visits"]) == before + 1
+
+
+# ---- tracing + health -------------------------------------------------------------
+
+def test_agent_runs_and_approvals_are_traced(client, admin):
+    client.post("/api/agents/scheduling/run", json={}, headers=admin)
+    spans = client.get("/api/traces?name=agent.run", headers=admin).json()
+    assert spans and spans[0]["attributes"]["agent"] == "scheduling"
+    r = client.post("/api/agents/patient_intelligence/run", json={"subject_id": 2}, headers=admin).json()
+    if r["actions"]:
+        client.post(f"/api/actions/{r['actions'][0]['id']}/approve", headers=admin)
+        ap = client.get("/api/traces?name=action.approve", headers=admin).json()
+        assert ap[0]["attributes"]["approved_by"] == "admin"
+
+
+def test_health_reports_components(client, admin):
+    h = client.get("/api/health", headers=admin).json()
+    assert h["database"] == "ok" and "ollama" in h and isinstance(h["steps_24h"], list)

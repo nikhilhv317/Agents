@@ -110,7 +110,14 @@ def complete_json(system: str, user: str, schema: dict | None = None,
     task: which TASK_MODELS entry routes this call (see module docstring). Omit
     to use DEFAULT_MODEL directly.
     """
+    from tracing import span
     model = resolve_model(task)
+    with span("llm.complete_json", model=model, task=task or "") as s:
+        result = _complete_json(model, system, user, schema, s)
+    return result
+
+
+def _complete_json(model: str, system: str, user: str, schema: dict | None, s) -> dict:
     client = _client()
     fmt = schema if schema else "json"
     msgs = [
@@ -136,6 +143,9 @@ def complete_json(system: str, user: str, schema: dict | None = None,
             resp = client.chat(model=model, messages=msgs, format=fmt,
                                keep_alive="30m", options={"temperature": 0})
         content = resp["message"]["content"]
+        for k in ("prompt_eval_count", "eval_count"):   # tokens in / out, for cost & latency tracking
+            if resp.get(k) is not None:
+                s.set_attribute(k, int(resp[k]))
         return json.loads(_strip_fences(content))
     except LLMUnavailable:
         raise

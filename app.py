@@ -693,6 +693,32 @@ def api_retrain(force: bool = False, user=Depends(require_admin)):
         raise HTTPException(500, str(e))
 
 
+@app.get("/api/traces")
+def api_traces(limit: int = 100, name: str = "", user=Depends(require_auth)):
+    """Recent trace spans (agent runs, model calls, tool calls, approvals), newest first."""
+    import tracing
+    return tracing.recent(min(max(limit, 1), 500), name or None)
+
+
+@app.get("/api/health")
+def api_health(user=Depends(require_auth)):
+    """Is everything the agents depend on up? Plus 24 h of per-step counts, errors, latency."""
+    import llm
+    import tracing
+    from vision import pipeline as vp
+    status = {"database": "ok"}
+    try:
+        tags = {m["model"] for m in llm._client().list()["models"]}
+        status["ollama"] = "ok"
+        wanted = {llm.resolve_model(t) for t in ("soap_note", "report_summary", "copilot")} | {"nomic-embed-text"}
+        status["models"] = {m: any(t == m or t.startswith(m + ":") for t in tags) for m in sorted(wanted)}
+    except Exception as e:
+        status["ollama"] = f"unreachable: {str(e)[:120]}"
+    status["vision_models"] = all(os.path.exists(p) for p in (vp.GATE_WEIGHTS, vp.GATE_META, vp.DETECTOR_WEIGHTS))
+    status["steps_24h"] = tracing.stats(24)
+    return status
+
+
 @app.get("/api/ml/retrain-history")
 def api_retrain_history(user=Depends(require_auth)):
     return db.retrain_history()
