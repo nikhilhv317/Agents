@@ -33,6 +33,7 @@ class AgentSpec:
     params: tuple[str, ...] = ()                # accepted keyword params (for listing / docs)
     input: Literal["json", "files"] = "json"    # "files" agents run via their multipart endpoint
     admin_only: bool = False
+    clinical: bool = False                      # drafts clinical content: clinician or admin role only
 
     def load(self):
         module, func = self.entry.split(":")
@@ -46,23 +47,23 @@ REGISTRY: dict[str, AgentSpec] = {s.key: s for s in [
     AgentSpec("imaging", "Imaging & Diagnostic", "Doctor",
               "Two-stage vision screen: dental gate, then YOLO lesion detection.",
               "agents.imaging_agent:analyze_batch", params=("image_paths", "patient_id"),
-              input="files"),
+              input="files", clinical=True),
     AgentSpec("report", "Report", "Doctor",
               "Drafts a 3-4 line visit summary from record, imaging and clinical findings.",
-              "agents.report_agent:generate", params=("patient_id", "clinical", "clinical_from_exam")),
+              "agents.report_agent:generate", params=("patient_id", "clinical", "clinical_from_exam"), clinical=True),
     AgentSpec("patient_intelligence", "Patient Intelligence", "Doctor / Front desk",
               "Drafts a clinical brief (insights, risks, recommendations) from the record.",
-              "agents.patient_intelligence:run", params=("subject_id",)),
+              "agents.patient_intelligence:run", params=("subject_id",), clinical=True),
     AgentSpec("clinical_assistant", "Clinical Assistant", "Doctor",
               "Drafts a SOAP note, pulling in the latest imaging finding.",
               "agents.clinical_assistant:draft",
-              params=("patient_id", "complaint", "findings", "propose_actions", "findings_from_exam")),
+              params=("patient_id", "complaint", "findings", "propose_actions", "findings_from_exam"), clinical=True),
     AgentSpec("voice_soap", "Voice-to-SOAP", "Doctor",
               "Transcribes a dictation locally (Whisper) and drafts a grounded SOAP note from it.",
-              "agents.voice:voice_soap", params=("audio_path", "patient_id"), input="files"),
+              "agents.voice:voice_soap", params=("audio_path", "patient_id"), input="files", clinical=True),
     AgentSpec("visit_pipeline", "Visit Pipeline", "Doctor",
               "Chains Clinical -> Report for one visit, pausing for review at each draft.",
-              "agents.visit_pipeline:start", params=("patient_id", "complaint", "trigger")),
+              "agents.visit_pipeline:start", params=("patient_id", "complaint", "trigger"), clinical=True),
     AgentSpec("copilot", "Clinic Copilot", "Doctor / Front desk",
               "Tool-calling chat: the model picks lookups; writes come back as proposals.",
               "agents.copilot:chat", params=("message", "history")),

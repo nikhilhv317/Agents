@@ -17,3 +17,10 @@ venv/
 
 # eval run outputs
 evals/results/
+
+# LoRA training data and outputs (regenerate with ml/lora/make_data.py / train.py)
+ml/lora/data/
+ml/lora/out/
+
+# encryption keys (back up separately; never commit)
+*.key

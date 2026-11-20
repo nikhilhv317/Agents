@@ -31,6 +31,87 @@ def connect():
     return conn
 
 
+# ---- encryption at rest (field level) -------------------------------------------
+# Clinical free text and contact details are stored Fernet-encrypted (AES-128-CBC +
+# HMAC). Names and MRNs stay plaintext so the roster can be searched and sorted.
+# Key: DPMS_ENC_KEY, else a key file next to the database (dpms.key, created on
+# first run). Keep that key backed up and OUT of the database's backups: lose it and
+# the encrypted fields are unrecoverable. DPMS_ENCRYPT=0 turns encryption off.
+# Values are prefixed "enc:v1:", so plaintext rows from older databases still read
+# fine and are encrypted in place by init_db() (migrate_encryption).
+ENC_PREFIX = "enc:v1:"
+ENCRYPTED = {"patients": ("phone", "allergies", "conditions"),
+             "visits": ("complaint", "diagnosis", "treatment", "notes"),
+             "patient_notes": ("content",),
+             "reports": ("imaging", "clinical", "ai_summary", "images"),
+             "agent_actions": ("payload",),
+             "scan_images": ("data_uri",)}
+_fernet = None
+
+
+def _cipher():
+    global _fernet
+    if _fernet is None:
+        from cryptography.fernet import Fernet
+        key = os.getenv("DPMS_ENC_KEY", "").strip()
+        if not key:
+            kp = os.path.join(os.path.dirname(DB_PATH) or ".", "dpms.key")
+            if os.path.exists(kp):
+                key = open(kp, encoding="ascii").read().strip()
+            else:
+                key = Fernet.generate_key().decode()
+                with open(kp, "w", encoding="ascii") as f:
+                    f.write(key)
+                print(f"[db] Created encryption key {kp} — back it up separately from the database.", flush=True)
+        _fernet = Fernet(key.encode())
+    return _fernet
+
+
+def _encrypting() -> bool:
+    return os.getenv("DPMS_ENCRYPT", "1") != "0"
+
+
+def enc(value):
+    if value is None or value == "" or not _encrypting() or str(value).startswith(ENC_PREFIX):
+        return value
+    return ENC_PREFIX + _cipher().encrypt(str(value).encode("utf-8")).decode("ascii")
+
+
+def dec(value):
+    if isinstance(value, str) and value.startswith(ENC_PREFIX):
+        return _cipher().decrypt(value[len(ENC_PREFIX):].encode("ascii")).decode("utf-8")
+    return value
+
+
+def _dec_row(row, table: str) -> dict:
+    d = dict(row)
+    for col in ENCRYPTED.get(table, ()):
+        if col in d:
+            d[col] = dec(d[col])
+    return d
+
+
+def migrate_encryption(conn) -> int:
+    """Encrypt any plaintext values left from before encryption (idempotent)."""
+    if not _encrypting():
+        return 0
+    n = 0
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for table, cols in ENCRYPTED.items():
+        if table not in tables:
+            continue
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col in cols:
+            if col not in have:
+                continue
+            rows = conn.execute(f"SELECT id, {col} FROM {table} WHERE {col} IS NOT NULL AND {col} <> '' "
+                                f"AND {col} NOT LIKE '{ENC_PREFIX}%'").fetchall()
+            conn.executemany(f"UPDATE {table} SET {col}=? WHERE id=?", [(enc(r[1]), r[0]) for r in rows])
+            n += len(rows)
+    conn.commit()
+    return n
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS patients (
     id INTEGER PRIMARY KEY, mrn TEXT UNIQUE, name TEXT NOT NULL,
@@ -112,19 +193,29 @@ def init_db(reset: bool = False):
         conn.commit()
     except Exception:
         pass  # column already exists
+    try:   # clinic separation: every chart belongs to one clinic (1 = the default clinic)
+        conn.execute("ALTER TABLE patients ADD COLUMN clinic_id INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+    except Exception:
+        pass
     if conn.execute("SELECT COUNT(*) AS n FROM patients").fetchone()["n"] == 0:
         conn.executemany("INSERT INTO patients (id,mrn,name,age,sex,phone,allergies,conditions) "
-                         "VALUES (?,?,?,?,?,?,?,?)", SEED_PATIENTS)
+                         "VALUES (?,?,?,?,?,?,?,?)",
+                         [(i, m, n, a, s_, enc(ph), enc(al), enc(co)) for i, m, n, a, s_, ph, al, co in SEED_PATIENTS])
         conn.executemany("INSERT INTO visits (patient_id,date,complaint,diagnosis,treatment,notes) "
-                         "VALUES (?,?,?,?,?,?)", SEED_VISITS)
+                         "VALUES (?,?,?,?,?,?)",
+                         [(pid, d, enc(c), enc(dx), enc(t), enc(nt)) for pid, d, c, dx, t, nt in SEED_VISITS])
         conn.commit()
+    migrate_encryption(conn)
     conn.close()
 
 
 # ---- patients ----
-def list_patients():
+def list_patients(clinic_id: int | None = None):
     conn = connect()
-    rows = conn.execute("SELECT id, mrn, name, age, sex FROM patients WHERE active = 1 ORDER BY name").fetchall()
+    q = "SELECT id, mrn, name, age, sex FROM patients WHERE active = 1"
+    rows = conn.execute(q + (" AND clinic_id = ?" if clinic_id else "") + " ORDER BY name",
+                        (clinic_id,) if clinic_id else ()).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -138,8 +229,8 @@ def get_patient(patient_id: int):
     visits = conn.execute("SELECT date, complaint, diagnosis, treatment, notes FROM visits "
                           "WHERE patient_id = ? ORDER BY date", (patient_id,)).fetchall()
     conn.close()
-    patient = dict(p)
-    patient["visits"] = [dict(v) for v in visits]
+    patient = _dec_row(p, "patients")
+    patient["visits"] = [_dec_row(v, "visits") for v in visits]
     return patient
 
 
@@ -147,7 +238,7 @@ def get_patient(patient_id: int):
 def save_action(agent, subject, label, type_, payload):
     conn = connect()
     cur = conn.execute("INSERT INTO agent_actions (agent,subject,label,type,payload) VALUES (?,?,?,?,?)",
-                       (agent, subject, label, type_, json.dumps(payload)))
+                       (agent, subject, label, type_, enc(json.dumps(payload))))
     conn.commit(); aid = cur.lastrowid; conn.close()
     return aid
 
@@ -156,7 +247,7 @@ def get_action(action_id: int):
     conn = connect()
     row = conn.execute("SELECT * FROM agent_actions WHERE id = ?", (action_id,)).fetchone()
     conn.close()
-    return dict(row) if row else None
+    return _dec_row(row, "agent_actions") if row else None
 
 
 def set_action_status(action_id: int, status: str):
@@ -202,7 +293,7 @@ def save_decision(appt_id, patient, appt_type, appt_hour, p_attend, decision, re
 def list_finalized():
     conn = connect()
     rows = conn.execute("SELECT d.appt_id, d.patient, d.appt_type, d.appt_hour, d.p_attend, d.decision, "
-                        "d.decided_on, d.decided_at, a.attended "
+                        "d.decided_on, d.decided_at, a.attended, a.patient_id "
                         "FROM decisions d LEFT JOIN appointments a ON a.id = d.appt_id "
                         "ORDER BY d.decided_on DESC, d.appt_hour ASC").fetchall()
     conn.close()
@@ -228,7 +319,7 @@ def set_attended(appt_id: int, attended: int):
 def save_note(patient_id: int, kind: str, content: str):
     conn = connect()
     conn.execute("INSERT INTO patient_notes (patient_id,kind,content) VALUES (?,?,?)",
-                 (patient_id, kind, content))
+                 (patient_id, kind, enc(content)))
     conn.commit(); conn.close()
 
 
@@ -241,7 +332,7 @@ def get_notes(patient_id: int, kind: str = None):
         rows = conn.execute("SELECT kind,content,created_at FROM patient_notes WHERE patient_id=? "
                             "ORDER BY id DESC", (patient_id,)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_dec_row(r, "patient_notes") for r in rows]
 
 
 def latest_note(patient_id: int, kind: str):
@@ -269,7 +360,8 @@ def create_report(patient_id, patient_name, imaging, clinical, ai_summary, statu
     except Exception:
         pass
     cur = conn.execute("INSERT INTO reports (patient_id,patient_name,imaging,clinical,ai_summary,status,images) "
-                       "VALUES (?,?,?,?,?,?,?)", (patient_id, patient_name, imaging, clinical, ai_summary, status, images))
+                       "VALUES (?,?,?,?,?,?,?)", (patient_id, patient_name, enc(imaging), enc(clinical),
+                                                 enc(ai_summary), status, enc(images)))
     conn.commit(); rid = cur.lastrowid; conn.close()
     return rid
 
@@ -283,7 +375,7 @@ def finalize_report(report_id):
 def update_report(report_id, ai_summary=None, status=None):
     conn = connect()
     if ai_summary is not None:
-        conn.execute("UPDATE reports SET ai_summary=? WHERE id=?", (ai_summary, report_id))
+        conn.execute("UPDATE reports SET ai_summary=? WHERE id=?", (enc(ai_summary), report_id))
     if status is not None:
         conn.execute("UPDATE reports SET status=? WHERE id=?", (status, report_id))
     conn.commit(); conn.close()
@@ -360,7 +452,7 @@ def get_report(report_id):
     conn = connect()
     r = conn.execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
     conn.close()
-    return dict(r) if r else None
+    return _dec_row(r, "reports") if r else None
 
 
 def list_reports(status=None):
@@ -373,7 +465,7 @@ def list_reports(status=None):
         rows = conn.execute("SELECT id,patient_id,patient_name,ai_summary,status,created_at,finalized_at "
                             "FROM reports ORDER BY id DESC").fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_dec_row(r, "reports") for r in rows]
 
 
 def approved_today(day=None):
@@ -417,7 +509,7 @@ def find_duplicate_candidates(name: str = "", phone: str = ""):
     conn.close()
     matches = []
     for r in rows:
-        r = dict(r)
+        r = _dec_row(r, "patients")
         phone_match = bool(norm_phone) and normalize_phone(r["phone"]) == norm_phone
         name_match = bool(name_norm) and r["name"].strip().lower() == name_norm
         if phone_match or name_match:
@@ -441,11 +533,12 @@ def next_mrn():
     return f"VDC-{n+1:04d}"
 
 
-def create_patient(name, age, sex, phone="", allergies="", conditions=""):
+def create_patient(name, age, sex, phone="", allergies="", conditions="", clinic_id=1):
     mrn = next_mrn()
     conn = connect()
-    cur = conn.execute("INSERT INTO patients (mrn,name,age,sex,phone,allergies,conditions) "
-                       "VALUES (?,?,?,?,?,?,?)", (mrn, name, age, sex, phone, allergies, conditions))
+    cur = conn.execute("INSERT INTO patients (mrn,name,age,sex,phone,allergies,conditions,clinic_id) "
+                       "VALUES (?,?,?,?,?,?,?,?)", (mrn, name, age, sex, enc(phone), enc(allergies),
+                                                   enc(conditions), clinic_id or 1))
     conn.commit(); pid = cur.lastrowid; conn.close()
     return pid, mrn
 
@@ -455,7 +548,7 @@ def update_patient(pid, fields: dict):
     sets, vals = [], []
     for k, v in fields.items():
         if k in allowed and v is not None:
-            sets.append(f"{k}=?"); vals.append(v)
+            sets.append(f"{k}=?"); vals.append(enc(v) if k in ENCRYPTED["patients"] else v)
     if not sets:
         return
     vals.append(pid)
@@ -472,7 +565,7 @@ def deactivate_patient(pid):
 def add_visit(patient_id, date, complaint, diagnosis, treatment, notes):
     conn = connect()
     conn.execute("INSERT INTO visits (patient_id,date,complaint,diagnosis,treatment,notes) "
-                 "VALUES (?,?,?,?,?,?)", (patient_id, date, complaint, diagnosis, treatment, notes))
+                 "VALUES (?,?,?,?,?,?)", (patient_id, date, enc(complaint), enc(diagnosis), enc(treatment), enc(notes)))
     conn.commit(); conn.close()
 
 
@@ -590,14 +683,28 @@ def count_new_outcomes(since_at=None):
 
 
 # ---- staff auth ----
+_AUTH_READY = set()
+
+
 def _auth_schema():
+    if DB_PATH in _AUTH_READY:
+        return
     conn = connect()
     conn.execute("""CREATE TABLE IF NOT EXISTS staff (
         id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL,
         display_name TEXT NOT NULL, password_hash TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+    # roles (admin | clinician | front_desk) and clinic separation; older DBs get
+    # the columns added, existing staff become clinicians and admin stays admin
+    for col in ("role TEXT NOT NULL DEFAULT 'clinician'", "clinic_id INTEGER NOT NULL DEFAULT 1"):
+        try:
+            conn.execute(f"ALTER TABLE staff ADD COLUMN {col}")
+        except Exception:
+            pass
+    conn.execute("UPDATE staff SET role='admin' WHERE username='admin'")
     conn.commit(); conn.close()
+    _AUTH_READY.add(DB_PATH)
 
 
 def seed_staff():
@@ -634,7 +741,7 @@ def seed_staff():
     if new_pw:
         h = _bc.hashpw(new_pw.encode(), _bc.gensalt()).decode()
         if admin is None:
-            conn.execute("INSERT INTO staff (username,display_name,password_hash) VALUES (?,?,?)",
+            conn.execute("INSERT INTO staff (username,display_name,password_hash,role) VALUES (?,?,?,'admin')",
                          ("admin", "Dr. Admin", h))
         else:
             conn.execute("UPDATE staff SET password_hash=? WHERE username='admin'", (h,))
@@ -654,20 +761,22 @@ def get_staff_by_username(username: str):
 def list_staff():
     _auth_schema()
     conn = connect()
-    rows = conn.execute("SELECT id,username,display_name,active,created_at "
+    rows = conn.execute("SELECT id,username,display_name,role,clinic_id,active,created_at "
                         "FROM staff ORDER BY id").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def create_staff(username, display_name, password):
+def create_staff(username, display_name, password, role="clinician", clinic_id=1):
     import bcrypt as _bc
     _auth_schema()
+    if role not in ("admin", "clinician", "front_desk"):
+        raise ValueError("role must be admin, clinician or front_desk")
     h = _bc.hashpw(password.encode(), _bc.gensalt()).decode()
     conn = connect()
     try:
-        conn.execute("INSERT INTO staff (username,display_name,password_hash) VALUES (?,?,?)",
-                     (username, display_name, h))
+        conn.execute("INSERT INTO staff (username,display_name,password_hash,role,clinic_id) VALUES (?,?,?,?,?)",
+                     (username, display_name, h, role, clinic_id))
         conn.commit()
     except Exception as e:
         conn.close()
@@ -680,6 +789,14 @@ def change_password(username, new_password):
     h = _bc.hashpw(new_password.encode(), _bc.gensalt()).decode()
     conn = connect()
     conn.execute("UPDATE staff SET password_hash=? WHERE username=?", (h, username))
+    conn.commit(); conn.close()
+
+
+def set_staff_role(staff_id, role):
+    if role not in ("admin", "clinician", "front_desk"):
+        raise ValueError("role must be admin, clinician or front_desk")
+    conn = connect()
+    conn.execute("UPDATE staff SET role=? WHERE id=? AND username<>'admin'", (role, staff_id))
     conn.commit(); conn.close()
 
 
@@ -703,7 +820,7 @@ def save_scan_image(patient_id: int, filename: str, data_uri: str, verdict: str 
     except Exception:
         pass
     conn.execute("INSERT INTO scan_images (patient_id,filename,data_uri,verdict,detections) "
-                 "VALUES (?,?,?,?,?)", (patient_id, filename, data_uri, verdict, detections))
+                 "VALUES (?,?,?,?,?)", (patient_id, filename, enc(data_uri), verdict, detections))
     conn.commit(); conn.close()
 
 
@@ -721,7 +838,7 @@ def get_scan_images(patient_id: int, limit: int = 100):
     rows = conn.execute("SELECT filename,data_uri,verdict,detections,created_at FROM scan_images "
                         "WHERE patient_id=? ORDER BY id ASC LIMIT ?", (patient_id, limit)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_dec_row(r, "scan_images") for r in rows]
 
 
 def get_imaging_findings(patient_id: int, same_day_only: bool = True):
@@ -745,7 +862,7 @@ def get_imaging_findings(patient_id: int, same_day_only: bool = True):
             "SELECT content, created_at FROM patient_notes WHERE patient_id=? AND kind='imaging' "
             "ORDER BY id ASC", (patient_id,)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_dec_row(r, "patient_notes") for r in rows]
 
 
 def imaging_summary(patient_id: int) -> str:

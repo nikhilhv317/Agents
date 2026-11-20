@@ -66,6 +66,9 @@
   .status { font-size:13px; color:var(--muted); margin-top:8px; min-height:18px; }
   .empty { color:var(--muted); font-size:13px; padding:22px 0; text-align:center; }
   .agent-summary { font-size:14px; line-height:1.55; background:#f6fafe; border:1px solid #e3edf9; border-radius:8px; padding:14px 16px; }
+  body[data-role="front_desk"] .act-approve, body[data-role="front_desk"] [data-act],
+  body[data-role="front_desk"] #btn-gen-report, body[data-role="front_desk"] #btn-dictate,
+  body[data-role="front_desk"] #btn-finalize-report, body[data-role="front_desk"] button[onclick^="deletePatient"] { display:none !important; }
   .cite { display:inline-block; font-size:10px; font-weight:600; line-height:1; padding:2px 5px; margin-left:3px; border-radius:4px; background:#e3edf9; color:#2563a8; vertical-align:1px; cursor:help; }
   .stage { margin-top:16px; } .stage h4 { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:0 0 10px; display:flex; align-items:center; gap:8px; }
   .stage h4 .num { width:18px; height:18px; border-radius:50%; background:var(--blue); color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; }
@@ -429,6 +432,7 @@
               <div class="field"><label>Display name</label><input id="sf-name" placeholder="e.g. Dr. Smith"></div>
             </div>
             <div class="field"><label>Password</label><input id="sf-password" type="password" placeholder="min 8 characters"></div>
+            <div class="field"><label>Role</label><select id="sf-role"><option value="clinician">Clinician — clinical drafts and approvals</option><option value="front_desk">Front desk — schedule, patients, booking</option><option value="admin">Admin — everything, incl. staff and imports</option></select></div>
             <div class="btn-row"><button class="btn" id="btn-cancel-staff">Cancel</button><button class="btn primary" id="btn-save-staff">Add</button></div>
             <div class="status" id="sf-status"></div>
           </div>
@@ -436,7 +440,7 @@
             <div class="section-label" style="margin:0">Active staff</div>
             <button class="btn primary tiny" id="btn-add-staff">+ Add staff</button>
           </div>
-          <table class="sched"><thead><tr><th>Username</th><th>Display name</th><th>Since</th><th></th></tr></thead>
+          <table class="sched"><thead><tr><th>Username</th><th>Display name</th><th>Role</th><th>Since</th><th></th></tr></thead>
             <tbody id="staff-rows"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table>
         </div>
       </div>
@@ -508,7 +512,9 @@ const VERDICT_BAND = {"Disease Detected":"high","Abnormal — needs review":"med
 const TITLES = {dashboard:'Dashboard',appointments:'Appointments',scan:'Scan',report:'Create Report',pipeline:'Visit Pipeline',copilot:'Clinic Copilot',reports:'Reports',patients:'Patients',users:'Users',settings:'Settings'};
 
 // ---- auth state ----
-let TOKEN = '', DISPLAY_NAME = 'Staff';
+let TOKEN = '', DISPLAY_NAME = 'Staff', ROLE = 'clinician';
+// front-desk users don't see clinical decision buttons (the server enforces it anyway)
+const applyRole = r => { ROLE = r||'clinician'; document.body.dataset.role = ROLE; };
 try { TOKEN = localStorage.getItem('dv_token')||''; DISPLAY_NAME = localStorage.getItem('dv_name')||'Staff'; } catch(e){}
 
 const api = async (p, o={}) => {
@@ -546,7 +552,7 @@ async function doLogin(){
     const r = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:pw})});
     if(!r.ok){ const e=await r.json().catch(()=>({detail:'Login failed'})); alert(e.detail||'Login failed'); if(btn){btn.disabled=false;btn.textContent='Login';} return; }
     const d = await r.json();
-    TOKEN = d.token; DISPLAY_NAME = d.display_name;
+    TOKEN = d.token; DISPLAY_NAME = d.display_name; applyRole(d.role);
     try{ localStorage.setItem('dv_token',TOKEN); localStorage.setItem('dv_name',DISPLAY_NAME); }catch(e){}
     showApp();
   } catch(e){ alert('Could not reach the server. Is uvicorn running?'); }
@@ -1174,15 +1180,17 @@ async function loadLog(){
 async function loadStaff(){
   const rows=await api('/api/staff')||[];
   const el=$('#staff-rows');if(!el)return;
-  el.innerHTML=rows.filter(r=>r.active).map(r=>`<tr><td>${esc(r.username)}</td><td>${esc(r.display_name)}</td><td style="color:var(--muted);font-size:12px">${(r.created_at||'').slice(0,10)}</td><td style="text-align:right"><button class="btn tiny b-rej" onclick="removeStaff(${r.id})">Remove</button></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No staff found.</td></tr>';
+  const roleSel=r=>r.username==='admin'?'admin':`<select onchange="setRole(${r.id},this.value)">${['clinician','front_desk','admin'].map(x=>`<option${x===r.role?' selected':''}>${x}</option>`).join('')}</select>`;
+  el.innerHTML=rows.filter(r=>r.active).map(r=>`<tr><td>${esc(r.username)}</td><td>${esc(r.display_name)}</td><td>${roleSel(r)}</td><td style="color:var(--muted);font-size:12px">${(r.created_at||'').slice(0,10)}</td><td style="text-align:right"><button class="btn tiny b-rej" onclick="removeStaff(${r.id})">Remove</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No staff found.</td></tr>';
 }
+async function setRole(id, role){ await api(`/api/staff/${id}/role`,{method:'PUT',body:JSON.stringify({role})}); loadStaff(); }
 async function saveStaff(){
   const u=($('#sf-username')||{}).value?.trim(),n=($('#sf-name')||{}).value?.trim(),p=($('#sf-password')||{}).value;
   const s=$('#sf-status');
   if(!u||!n||!p){if(s)s.textContent='All fields required.';return;}
-  if(p.length<6){if(s)s.textContent='Password too short (min 6).';return;}
+  if(p.length<8){if(s)s.textContent='Password too short (min 8).';return;}
   const b=$('#btn-save-staff');if(b){b.disabled=true;b.textContent='Adding…';}
-  const r=await api('/api/staff',{method:'POST',body:JSON.stringify({username:u,display_name:n,password:p})});
+  const r=await api('/api/staff',{method:'POST',body:JSON.stringify({username:u,display_name:n,password:p,role:($('#sf-role')||{}).value||'clinician'})});
   if(r&&r.ok){const f=$('#staff-form');if(f)f.style.display='none';loadStaff();}
   else if(s)s.textContent=(r&&r.detail)||'Could not add staff.';
   if(b){b.disabled=false;b.textContent='Add';}
@@ -1358,7 +1366,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(TOKEN){
     // verify token is still valid before auto-showing the app
     api('/api/auth/me').then(me=>{
-      if(me&&me.sub){ DISPLAY_NAME=me.name||DISPLAY_NAME; showApp(); }
+      if(me&&me.sub){ DISPLAY_NAME=me.name||DISPLAY_NAME; applyRole(me.role); showApp(); }
       else{ try{localStorage.removeItem('dv_token');localStorage.removeItem('dv_name');}catch(e){} TOKEN=''; }
     });
   }

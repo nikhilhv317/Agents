@@ -45,3 +45,5 @@ mcp>=2.0                        # mcp_server.py — Model Context Protocol serve
 opentelemetry-sdk>=1.20             # tracing.py — spans stored locally; OTLP export optional
 fhir.resources>=7                   # interop/fhir.py — FHIR R4B models (validation)
 pydicom>=2.4                        # interop/dicom.py — DICOM image import
+python-dotenv>=1.0                  # app.py — loads .env (JWT_SECRET, DPMS_ENC_KEY, ...)
+cryptography>=42                    # db.py — field-level encryption of clinical text

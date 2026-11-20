@@ -59,9 +59,13 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def create_token(username: str, display_name: str) -> str:
+ROLES = ("admin", "clinician", "front_desk")
+
+
+def create_token(username: str, display_name: str, role: str = "clinician",
+                 clinic_id: int = 1) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRY_HOURS)
-    return jwt.encode({"sub": username, "name": display_name,
+    return jwt.encode({"sub": username, "name": display_name, "role": role, "clinic": clinic_id,
                        "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -85,16 +89,31 @@ def require_auth(creds: HTTPAuthorizationCredentials = Depends(bearer)):
                             headers={"WWW-Authenticate": "Bearer"})
     try:
         payload = decode_token(creds.credentials)
-        return payload   # {"sub": username, "name": display_name}
     except JWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             detail="Invalid or expired token",
                             headers={"WWW-Authenticate": "Bearer"})
+    # The account must still exist and be active, and its CURRENT role/clinic win
+    # over what the token says — deactivating someone or changing their role takes
+    # effect immediately, not when their 8-hour token expires.
+    staff = db.get_staff_by_username(payload.get("sub", ""))
+    if not staff:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Account disabled",
+                            headers={"WWW-Authenticate": "Bearer"})
+    payload["role"] = staff.get("role") or "clinician"
+    payload["clinic"] = staff.get("clinic_id") or 1
+    return payload   # {"sub", "name", "role", "clinic"}
 
 
-def require_admin(user: dict = Depends(require_auth)):
-    """Like require_auth, but only the `admin` account passes. There's no role
-    column yet, so admin is identified by username."""
-    if user.get("sub") != "admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin only")
-    return user
+def require_role(*roles: str):
+    """Dependency factory: require_role("admin", "clinician"). Admin always passes."""
+    def check(user: dict = Depends(require_auth)):
+        if user.get("role") != "admin" and user.get("role") not in roles:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail=f"Needs role: {' or '.join(('admin',) + roles)}")
+        return user
+    return check
+
+
+require_admin = require_role()                  # admin only
+require_clinician = require_role("clinician")   # clinical decisions: approvals, sign-off, deleting charts

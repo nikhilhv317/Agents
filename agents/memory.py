@@ -84,7 +84,7 @@ def _ensure_indexed(patient_id: int, items: list[dict]) -> dict[str, list[float]
             h = _hash(it["text"])
             conn.execute("INSERT OR IGNORE INTO memory_index (patient_id,kind,ref,date,text,text_hash,model,vector) "
                          "VALUES (?,?,?,?,?,?,?,?)",
-                         (patient_id, it["kind"], it["ref"], it["date"], it["text"], h, EMBED_MODEL, json.dumps(v)))
+                         (patient_id, it["kind"], it["ref"], it["date"], db.enc(it["text"]), h, EMBED_MODEL, json.dumps(v)))
             have[h] = v
         conn.commit()
     conn.close()

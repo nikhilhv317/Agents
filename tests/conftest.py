@@ -40,11 +40,21 @@ def admin(client):
 
 @pytest.fixture(scope="session")
 def staff(client):
+    """A front-desk login (the least-privileged role)."""
     try:
-        db.create_staff("desk", "Front Desk", "desk-test-pw")
+        db.create_staff("desk", "Front Desk", "desk-test-pw", role="front_desk")
     except ValueError:
         pass
     return _login(client, "desk", "desk-test-pw")
+
+
+@pytest.fixture(scope="session")
+def clinician(client):
+    try:
+        db.create_staff("drsmile", "Dr. Smile", "clin-test-pw", role="clinician")
+    except ValueError:
+        pass
+    return _login(client, "drsmile", "clin-test-pw")
 
 
 @pytest.fixture

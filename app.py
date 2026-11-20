@@ -20,15 +20,58 @@ from typing import Optional
 from datetime import date, datetime
 import os
 
-import db
+
+def _load_env():
+    """Read .env (if python-dotenv is installed) BEFORE db/auth read their settings,
+    and make sure a strong JWT_SECRET exists — without one, auth.py falls back to a
+    random per-process secret and every restart logs everyone out."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(env_path)
+    except ImportError:
+        pass
+    secret = os.getenv("JWT_SECRET", "")
+    if len(secret) < 32 or secret.startswith("change-me"):
+        import secrets
+        secret = secrets.token_urlsafe(48)
+        with open(env_path, "a", encoding="utf-8") as f:
+            f.write(f"\n# generated on first run — keeps logins valid across restarts\nJWT_SECRET={secret}\n")
+        os.environ["JWT_SECRET"] = secret
+
+
+_load_env()
+
+import db  # noqa: E402  (after _load_env so DPMS_DB_PATH etc. from .env apply)
 import agents
-from auth import authenticate, create_token, require_auth, require_admin
+from auth import authenticate, create_token, require_auth, require_admin, require_clinician
 
 app = FastAPI(title="DPMS Agentic AI")
 db.init_db()
 db.seed_staff()   # admin from ADMIN_PASSWORD, else random (printed); rotates old admin123
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+# ---- clinic separation --------------------------------------------------------
+# Every chart belongs to one clinic (patients.clinic_id); every staff login to one
+# clinic (staff.clinic_id, checked fresh on each request in auth.require_auth).
+# Staff only see and touch their own clinic's patients — anything else is a 404,
+# so ids from another clinic can't even be probed.
+
+def _clinic(user) -> int:
+    return int(user.get("clinic") or 1)
+
+
+def _own_patient(patient_id, user):
+    p = db.get_patient(int(patient_id)) if patient_id is not None else None
+    if p is None or int(p.get("clinic_id") or 1) != _clinic(user):
+        raise HTTPException(404, "patient not found")
+    return p
+
+
+def _clinic_patient_ids(user) -> set:
+    return {p["id"] for p in db.list_patients(_clinic(user))}
+
 
 
 @app.get("/")
@@ -95,9 +138,10 @@ def api_login(req: LoginReq):
     user = authenticate(req.username, req.password)
     if not user:
         raise HTTPException(401, "Invalid username or password")
-    token = create_token(user["username"], user["display_name"])
+    token = create_token(user["username"], user["display_name"], user.get("role") or "clinician",
+                         user.get("clinic_id") or 1)
     return {"token": token, "display_name": user["display_name"],
-            "username": user["username"]}
+            "username": user["username"], "role": user.get("role") or "clinician"}
 
 
 @app.get("/api/auth/me")
@@ -111,6 +155,7 @@ class StaffReq(BaseModel):
     username: str
     display_name: str
     password: str
+    role: str = "clinician"     # admin | clinician | front_desk
 
 
 @app.get("/api/staff")
@@ -123,7 +168,7 @@ def api_create_staff(req: StaffReq, user=Depends(require_admin)):
     if len(req.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     try:
-        db.create_staff(req.username, req.display_name, req.password)
+        db.create_staff(req.username, req.display_name, req.password, req.role, user.get("clinic", 1))
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True}
@@ -137,11 +182,24 @@ class PasswordReq(BaseModel):
 def api_change_password(username: str, req: PasswordReq,
                          user=Depends(require_auth)):
     # staff may change their own password; only admin may change someone else's
-    if username != user["sub"] and user["sub"] != "admin":
+    if username != user["sub"] and user.get("role") != "admin":
         raise HTTPException(403, "You can only change your own password")
     if len(req.new_password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     db.change_password(username, req.new_password)
+    return {"ok": True}
+
+
+class RoleReq(BaseModel):
+    role: str
+
+
+@app.put("/api/staff/{staff_id}/role")
+def api_set_role(staff_id: int, req: RoleReq, user=Depends(require_admin)):
+    try:
+        db.set_staff_role(staff_id, req.role)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {"ok": True}
 
 
@@ -155,7 +213,7 @@ def api_deactivate_staff(staff_id: int, user=Depends(require_admin)):
 
 @app.get("/api/patients")
 def api_patients(user=Depends(require_auth)):
-    return db.list_patients()
+    return db.list_patients(_clinic(user))
 
 
 # Must be declared before /api/patients/{patient_id}, or FastAPI matches
@@ -165,15 +223,13 @@ def api_find_patient(name: str = "", phone: str = "", user=Depends(require_auth)
     """Look up existing patients who might be the same person (staff-side
     duplicate check before 'New Patient' creates a second record for someone
     who already has a chart)."""
-    return db.find_duplicate_candidates(name, phone)
+    ids = _clinic_patient_ids(user)
+    return [c for c in db.find_duplicate_candidates(name, phone) if c["id"] in ids]
 
 
 @app.get("/api/patients/{patient_id}")
 def api_patient(patient_id: int, user=Depends(require_auth)):
-    patient = db.get_patient(patient_id)
-    if patient is None:
-        raise HTTPException(404, "patient not found")
-    return patient
+    return _own_patient(patient_id, user)
 
 
 @app.get("/api/patients/{patient_id}/context")
@@ -181,9 +237,7 @@ def api_patient_context(patient_id: int, user=Depends(require_auth)):
     """What staff should see when they open a patient's record: the latest
     imaging finding, saved notes, and past visit history — the Scan -> Note
     loop plus the clinical history, made visible."""
-    patient = db.get_patient(patient_id)
-    if patient is None:
-        raise HTTPException(404, "patient not found")
+    patient = _own_patient(patient_id, user)
     findings = db.get_imaging_findings(patient_id)
     combined = db.imaging_summary(patient_id) if findings else None
     return {"latest_imaging": combined,
@@ -203,22 +257,21 @@ class PatientReq(BaseModel):
 
 @app.post("/api/patients")
 def api_create_patient(req: PatientReq, user=Depends(require_auth)):
-    pid, mrn = db.create_patient(req.name, req.age, req.sex, req.phone, req.allergies, req.conditions)
+    pid, mrn = db.create_patient(req.name, req.age, req.sex, req.phone, req.allergies, req.conditions,
+                                 _clinic(user))
     return {"id": pid, "mrn": mrn}
 
 
 @app.put("/api/patients/{patient_id}")
 def api_update_patient(patient_id: int, req: PatientReq, user=Depends(require_auth)):
-    if db.get_patient(patient_id) is None:
-        raise HTTPException(404, "patient not found")
+    _own_patient(patient_id, user)
     db.update_patient(patient_id, req.model_dump())
     return {"ok": True}
 
 
 @app.delete("/api/patients/{patient_id}")
-def api_delete_patient(patient_id: int, user=Depends(require_auth)):
-    if db.get_patient(patient_id) is None:
-        raise HTTPException(404, "patient not found")
+def api_delete_patient(patient_id: int, user=Depends(require_clinician)):
+    _own_patient(patient_id, user)
     db.deactivate_patient(patient_id)
     return {"ok": True}
 
@@ -232,8 +285,7 @@ class ApptReq(BaseModel):
 
 @app.post("/api/appointments")
 def api_create_appointment(req: ApptReq, user=Depends(require_auth)):
-    if db.get_patient(req.patient_id) is None:
-        raise HTTPException(404, "patient not found")
+    _own_patient(req.patient_id, user)
     aid, was_dup = db.create_appointment(req.patient_id, req.appt_date, req.appt_time, req.appt_type)
     return {"id": aid, "duplicate": was_dup}
 
@@ -246,6 +298,12 @@ class OutcomeReq(BaseModel):
 def api_outcome(appt_id: int, req: OutcomeReq, user=Depends(require_auth)):
     """Outcome capture: record whether a patient actually showed. This is the
     real-world signal a future model retrains on."""
+    conn = db.connect()
+    row = conn.execute("SELECT patient_id FROM appointments WHERE id=?", (appt_id,)).fetchone()
+    conn.close()
+    if row is None:
+        raise HTTPException(404, "appointment not found")
+    _own_patient(row["patient_id"], user)
     db.set_attended(appt_id, 1 if req.attended else 0)
     db.add_log("scheduling", f"appt:{appt_id}",
                f"Outcome recorded: {'showed' if req.attended else 'no-show'}")
@@ -265,13 +323,18 @@ def api_run_agent(agent_key: str, params: dict = Body(default={}), user=Depends(
     spec = agents.get_agent(agent_key)
     if spec is None:
         raise HTTPException(404, f"unknown agent '{agent_key}'")
-    if spec.admin_only and user.get("sub") != "admin":
+    if spec.admin_only and user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
+    if spec.clinical and user.get("role") not in ("admin", "clinician"):
+        raise HTTPException(403, "Needs role: clinician or admin")
     if spec.input == "files":
         raise HTTPException(400, f"'{agent_key}' takes file uploads — use /api/imaging/analyze_batch")
     unknown = set(params) - set(spec.params)
     if unknown:
         raise HTTPException(400, f"unknown params {sorted(unknown)}; '{agent_key}' accepts {list(spec.params)}")
+    for k in ("patient_id", "subject_id"):
+        if params.get(k) is not None:
+            _own_patient(params[k], user)
     try:
         return agents.run(agent_key, **params)
     except (ValueError, TypeError) as e:
@@ -279,7 +342,7 @@ def api_run_agent(agent_key: str, params: dict = Body(default={}), user=Depends(
 
 
 @app.post("/api/actions/{action_id}/approve")
-def api_approve(action_id: int, user=Depends(require_auth)):
+def api_approve(action_id: int, user=Depends(require_clinician)):
     try:
         message = agents.execute_action(action_id, approved_by=user.get("sub"))
     except ValueError as e:
@@ -334,11 +397,13 @@ class PipelineDecision(BaseModel):
 @app.get("/api/pipeline/runs")
 def api_pipeline_runs(user=Depends(require_auth)):
     from agents import visit_pipeline
-    return visit_pipeline.list_runs()
+    ids = _clinic_patient_ids(user)
+    return [r for r in visit_pipeline.list_runs() if r["patient_id"] in ids]
 
 
 @app.post("/api/pipeline/start")
-def api_pipeline_start(req: PipelineStartReq, user=Depends(require_auth)):
+def api_pipeline_start(req: PipelineStartReq, user=Depends(require_clinician)):
+    _own_patient(req.patient_id, user)
     try:
         return agents.run("visit_pipeline", patient_id=req.patient_id, complaint=req.complaint,
                           trigger=f"started by {user['sub']}")
@@ -347,8 +412,12 @@ def api_pipeline_start(req: PipelineStartReq, user=Depends(require_auth)):
 
 
 @app.post("/api/pipeline/{run_id}/resume")
-def api_pipeline_resume(run_id: int, req: PipelineDecision, user=Depends(require_auth)):
+def api_pipeline_resume(run_id: int, req: PipelineDecision, user=Depends(require_clinician)):
     from agents import visit_pipeline
+    run = db.get_pipeline_run(run_id)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    _own_patient(run["patient_id"], user)
     decision = req.model_dump(exclude_none=True)
     decision["by"] = user["sub"]          # who signed off, recorded in the agent log
     try:
@@ -369,7 +438,10 @@ def _scheduling():
 @app.get("/api/scheduling/today")
 def api_scheduling_today(user=Depends(require_auth)):
     """Score today's schedule (fast — sklearn only). No parked run to go stale."""
-    return agents.run("scheduling", day=date.today().isoformat())
+    res = agents.run("scheduling", day=date.today().isoformat())
+    ids = _clinic_patient_ids(user)
+    res["predictions"] = [p for p in res["predictions"] if p["patient_id"] in ids]
+    return res
 
 
 class DecisionReq(BaseModel):
@@ -428,7 +500,8 @@ def api_scheduling_decisions(req: DecisionsReq, user=Depends(require_auth)):
 
 @app.get("/api/scheduling/finalized")
 def api_scheduling_finalized(user=Depends(require_auth)):
-    return db.list_finalized()
+    ids = _clinic_patient_ids(user)
+    return [d for d in db.list_finalized() if d.get("patient_id") in ids]
 
 
 @app.get("/api/agent-log")
@@ -440,7 +513,8 @@ def api_log(user=Depends(require_auth)):
 
 @app.get("/api/scheduling/approved-today")
 def api_approved_today(user=Depends(require_auth)):
-    return db.approved_today()
+    ids = _clinic_patient_ids(user)
+    return [q for q in db.approved_today() if q["patient_id"] in ids]
 
 
 class ReportReq(BaseModel):
@@ -459,17 +533,21 @@ class ScanImageReq(BaseModel):
 @app.post("/api/scan-images")
 def api_save_scan_image(req: ScanImageReq, user=Depends(require_auth)):
     """Store a scanned image (data URI) against a patient so reports can embed it."""
+    if req.patient_id is not None:
+        _own_patient(req.patient_id, user)
     db.save_scan_image(req.patient_id, req.filename, req.data_uri, req.verdict, req.detections)
     return {"ok": True}
 
 
 @app.get("/api/patients/{patient_id}/scan-images")
 def api_get_scan_images(patient_id: int, user=Depends(require_auth)):
+    _own_patient(patient_id, user)
     return db.get_scan_images(patient_id)
 
 
 @app.post("/api/reports/generate")
-def api_report_generate(req: ReportReq, user=Depends(require_auth)):
+def api_report_generate(req: ReportReq, user=Depends(require_clinician)):
+    _own_patient(req.patient_id, user)
     try:
         return agents.run("report", patient_id=req.patient_id, clinical=req.clinical)
     except ValueError as e:
@@ -477,9 +555,11 @@ def api_report_generate(req: ReportReq, user=Depends(require_auth)):
 
 
 @app.post("/api/reports/{report_id}/finalize")
-def api_report_finalize(report_id: int, user=Depends(require_auth)):
-    if db.get_report(report_id) is None:
+def api_report_finalize(report_id: int, user=Depends(require_clinician)):
+    r0 = db.get_report(report_id)
+    if r0 is None:
         raise HTTPException(404, "report not found")
+    _own_patient(r0["patient_id"], user)
     from agents import report_agent
     report_agent.finalize(report_id)   # also records the encounter in visit history
     return {"ok": True}
@@ -488,7 +568,8 @@ def api_report_finalize(report_id: int, user=Depends(require_auth)):
 @app.get("/api/reports")
 def api_reports(status: str = "all", user=Depends(require_auth)):
     """Default 'all' so freshly-generated drafts are visible, not silently hidden."""
-    return db.list_reports(None if status == "all" else status)
+    ids = _clinic_patient_ids(user)
+    return [r for r in db.list_reports(None if status == "all" else status) if r["patient_id"] in ids]
 
 
 @app.get("/api/reports/{report_id}")
@@ -496,6 +577,7 @@ def api_report(report_id: int, user=Depends(require_auth)):
     r = db.get_report(report_id)
     if r is None:
         raise HTTPException(404, "report not found")
+    _own_patient(r["patient_id"], user)
     return r
 
 
@@ -508,7 +590,8 @@ class ClinicalReq(BaseModel):
 
 
 @app.post("/api/clinical/draft")
-def api_clinical_draft(req: ClinicalReq, user=Depends(require_auth)):
+def api_clinical_draft(req: ClinicalReq, user=Depends(require_clinician)):
+    _own_patient(req.patient_id, user)
     try:
         return agents.run("clinical_assistant", patient_id=req.patient_id,
                           complaint=req.complaint, findings=req.findings)
@@ -518,9 +601,11 @@ def api_clinical_draft(req: ClinicalReq, user=Depends(require_auth)):
 
 @app.post("/api/clinical/voice")
 async def api_clinical_voice(file: UploadFile = File(...), patient_id: int = Form(...),
-                             user=Depends(require_auth)):
+                             user=Depends(require_clinician)):
     """Dictation -> local Whisper transcript -> grounded SOAP draft. Audio is
     written to a temp file, transcribed on this machine, and deleted."""
+    if patient_id is not None:
+        _own_patient(patient_id, user)
     import tempfile
     from agents.voice import VoiceUnavailable
 
@@ -573,6 +658,8 @@ async def api_imaging_batch(files: list[UploadFile] = File(...), patient_id: int
                             user=Depends(require_auth)):
     """Analyze many images in one batched, full-speed pass. If patient_id is given,
     findings attach to that patient's chart on approval."""
+    if patient_id is not None:
+        _own_patient(patient_id, user)
     import tempfile
     from vision.pipeline import PipelineUnavailable
 
@@ -608,6 +695,8 @@ async def api_imaging_video(file: UploadFile = File(...), patient_id: int = Form
     """Sample frames from an uploaded video and run the same two-stage vision
     pipeline as the image endpoints. See imaging_agent.analyze_video for why
     the aggregation is per-class-per-frame, not per detection box."""
+    if patient_id is not None:
+        _own_patient(patient_id, user)
     import tempfile
     from agents import imaging_agent
     from vision.pipeline import PipelineUnavailable
@@ -700,6 +789,7 @@ def api_patient_fhir(patient_id: int, user=Depends(require_auth)):
     """The patient's chart as a validated FHIR R4 Bundle."""
     from interop import fhir
     try:
+        _own_patient(patient_id, user)
         return fhir.patient_bundle(patient_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
@@ -741,6 +831,8 @@ async def api_import_csv(kind: str, file: UploadFile = File(...), user=Depends(r
 async def api_imaging_dicom(file: UploadFile = File(...), patient_id: int = Form(None),
                             user=Depends(require_auth)):
     """A DICOM image through the same gate + detector as a photo upload."""
+    if patient_id is not None:
+        _own_patient(patient_id, user)
     import tempfile
     from interop import dicom
     from vision.pipeline import PipelineUnavailable

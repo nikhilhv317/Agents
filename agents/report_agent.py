@@ -66,6 +66,19 @@ def ground_report(patient: dict, imaging: str, clinical: str, summary: str,
     return found
 
 
+def _prompt(patient: dict, imaging: str, clinical: str) -> str:
+    """The user prompt (also used verbatim to build the LoRA training set, ml/lora/)."""
+    from agents import grounding
+    from agents.untrusted import defuse   # the name can come from the public booking page
+    return (
+        f"Patient: {defuse(patient['name'])}, {patient['age']}y {patient['sex']}\n"
+        f"Allergies: {patient['allergies'] or 'none recorded'}\n"
+        f"Medical conditions: {patient['conditions'] or 'none recorded'}\n\n"
+        f"Sources:\n{grounding.format_sources(grounding.report_sources(patient, imaging, clinical))}\n\n"
+        "Write the 3-4 line summary."
+    )
+
+
 def generate(patient_id: int, clinical: str = "", clinical_from_exam: bool = True) -> dict:
     """clinical_from_exam: the clinician typed these findings, so the summary may
     describe an examination. The pipeline passes False (its 'clinical' is the SOAP note)."""
@@ -76,14 +89,7 @@ def generate(patient_id: int, clinical: str = "", clinical_from_exam: bool = Tru
     imaging = _receive_imaging_handoff(patient_id)
 
     from agents import grounding
-    from agents.untrusted import defuse   # the name can come from the public booking page
-    prompt = (
-        f"Patient: {defuse(patient['name'])}, {patient['age']}y {patient['sex']}\n"
-        f"Allergies: {patient['allergies'] or 'none recorded'}\n"
-        f"Medical conditions: {patient['conditions'] or 'none recorded'}\n\n"
-        f"Sources:\n{grounding.format_sources(grounding.report_sources(patient, imaging, clinical))}\n\n"
-        "Write the 3-4 line summary."
-    )
+    prompt = _prompt(patient, imaging, clinical)
     try:
         data = llm.complete_json(SYSTEM, prompt, schema=_Summary.model_json_schema(),
                                  task="report_summary")
