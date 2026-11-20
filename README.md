@@ -147,3 +147,7 @@ a bigger model. On CPU expect roughly 40–100 s per question.
 Same shape: a module in `agents/` returning the shared contract, plus its screen.
 Imaging needs a vision-capable local model (e.g. a Qwen-VL or llama3.2-vision tag)
 since it reads an image rather than a record.
+
+## Strategy
+
+Where the project stands against the market, and a prioritised roadmap: [docs/STRATEGY.md](docs/STRATEGY.md).
