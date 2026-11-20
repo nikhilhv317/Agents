@@ -367,7 +367,9 @@
               <div class="section-label">Report — <span id="report-active"></span></div>
               <div class="field"><label>Imaging findings (from Scan)</label><textarea id="rep-imaging" rows="2" readonly placeholder="No imaging attached yet"></textarea></div>
               <div class="field"><label>Clinical findings</label><textarea id="rep-clinical" rows="3" placeholder="Examination, diagnosis, treatment done today…"></textarea></div>
-              <button class="btn primary" id="btn-gen-report">Generate report</button>
+              <div class="btn-row" style="margin-top:0"><button class="btn primary" id="btn-gen-report">Generate report</button>
+                <button class="btn" id="btn-dictate" title="Dictate the visit; transcribed on this computer">🎙 Dictate SOAP note</button></div>
+              <div id="dictate-result"></div>
               <div id="report-result"></div>
             </div>
             <div class="card"><div class="section-label">Record</div><div id="record-notes"><div class="empty" style="padding:14px 0">No saved notes yet.</div></div></div>
@@ -562,6 +564,7 @@ function init(){
   const av=$('#btn-analyze-video'); if(av) av.onclick=analyzeVideo;
   // report
   const gr=$('#btn-gen-report'); if(gr) gr.onclick=genReport;
+  const dc=$('#btn-dictate'); if(dc) dc.onclick=toggleDictation;
   // patients
   const np=$('#btn-new-patient'); if(np) np.onclick=()=>{ EDIT_ID=null; if($('#patient-form-title')) $('#patient-form-title').textContent='New patient'; fillPatientForm(null); showPatientForm(true); };
   const cp=$('#btn-cancel-patient'); if(cp) cp.onclick=()=>showPatientForm(false);
@@ -819,6 +822,39 @@ async function loadReport(){
     if(lab) lab.textContent = n ? `Imaging findings from Scan (${n} image${n>1?'s':''})` : 'Imaging findings (from Scan)';
   }
 }
+// ---- Voice-to-SOAP: record in the browser, transcribe + draft on the server (local Whisper) ----
+let REC=null, REC_CHUNKS=[];
+async function toggleDictation(){
+  const b=$('#btn-dictate'), out=$('#dictate-result');
+  if(REC&&REC.state==='recording'){ REC.stop(); return; }
+  if(!ACTIVE) return;
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    REC=new MediaRecorder(stream); REC_CHUNKS=[];
+    REC.ondataavailable=e=>{ if(e.data.size) REC_CHUNKS.push(e.data); };
+    REC.onstop=async()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      b.textContent='Transcribing…'; b.disabled=true;
+      const fd=new FormData();
+      fd.append('file', new Blob(REC_CHUNKS,{type:REC.mimeType||'audio/webm'}), 'dictation.webm');
+      fd.append('patient_id', ACTIVE.id);
+      const r=await apiForm('/api/clinical/voice', fd);
+      b.textContent='🎙 Dictate SOAP note'; b.disabled=false;
+      if(!r||!r.soap){ out.innerHTML=`<div class="empty">${esc((r&&r.detail)||'Could not transcribe the recording.')}</div>`; return; }
+      const s=r.soap, src=r.sources||{};
+      const flags=(r.unsupported||[]).length?`<div class="disclaimer" style="color:#b45309">⚠ ${r.unsupported.length} finding(s) to verify: ${esc(r.unsupported.map(u=>u.claim).join(', '))}</div>`:'';
+      out.innerHTML=`<div class="section-label" style="margin:16px 0 6px">Dictated SOAP note <span class="tag llm">Transcribed locally (${esc(r.transcript.device)})</span></div>
+        <div class="disclaimer" style="margin:0 0 8px">Transcript: “${esc(r.transcript.text)}”</div>
+        <div class="agent-summary"><b>S</b> ${cite(s.subjective,src)}<br><b>O</b> ${cite(s.objective,src)}<br><b>A</b> ${cite(s.assessment,src)}<br><b>P</b> ${esc((s.plan||[]).join('; '))}</div>${flags}
+        <div class="btn-row">${(r.actions||[]).map(a=>`<button class="btn tiny act-approve" data-id="${a.id}">${esc(a.label)}</button>`).join('')}</div>`;
+      out.querySelectorAll('.act-approve').forEach(x=>x.addEventListener('click',()=>approveGeneric(x)));
+      const rc=$('#rep-clinical'); if(rc&&!rc.value.trim()) rc.value=r.findings_from_dictation||'';
+    };
+    REC.start(); b.textContent='⏹ Stop and transcribe';
+    out.innerHTML='<div class="empty">Recording… speak the complaint, then “on examination …”.</div>';
+  }catch(e){ out.innerHTML='<div class="empty">Microphone not available in this browser.</div>'; }
+}
+
 async function genReport(){
   if(!ACTIVE)return;
   const b=$('#btn-gen-report'),rr=$('#report-result');

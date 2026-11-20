@@ -516,6 +516,31 @@ def api_clinical_draft(req: ClinicalReq, user=Depends(require_auth)):
         raise HTTPException(404, str(e))
 
 
+@app.post("/api/clinical/voice")
+async def api_clinical_voice(file: UploadFile = File(...), patient_id: int = Form(...),
+                             user=Depends(require_auth)):
+    """Dictation -> local Whisper transcript -> grounded SOAP draft. Audio is
+    written to a temp file, transcribed on this machine, and deleted."""
+    import tempfile
+    from agents.voice import VoiceUnavailable
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".webm"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.write(await file.read())
+    tmp.close()
+    try:
+        return agents.run("voice_soap", audio_path=tmp.name, patient_id=patient_id)
+    except VoiceUnavailable as e:
+        raise HTTPException(503, f"Voice transcription not ready: {e}")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
 # ---- Imaging & Diagnostic (vision agent) ------------------------------------
 
 @app.post("/api/imaging/analyze")

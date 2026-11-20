@@ -58,3 +58,17 @@ def test_citations_catch_past_visit_cited_as_today():
     found = {f["claim"] for f in grounding.check_citations("Abscess on #45 [V1].", src, allowed={"F"})}
     assert "abscess (cites [V1])" in found
     assert grounding.strip_tags("Tender on #46 [F]. Old caries [V2].") == "Tender on #46. Old caries."
+
+
+def test_split_dictation_separates_complaint_from_exam():
+    from agents.voice import split_dictation
+    c, f = split_dictation("Pain lower right molar for three days. On examination, tooth 46 tender to percussion.")
+    assert c == "Pain lower right molar for three days" and f.startswith("On examination")
+    assert split_dictation("Tooth 46 tender to percussion.") == ("", "Tooth 46 tender to percussion.")
+
+
+def test_fix_dental_terms_only_in_dental_context():
+    from agents.voice import fix_dental_terms
+    assert fix_dental_terms("Deep distal carries on 46.") == "Deep distal caries on 46."
+    assert fix_dental_terms("Carries on 36 noted.") == "caries on 36 noted."
+    assert fix_dental_terms("She carries her medication list.") == "She carries her medication list."
