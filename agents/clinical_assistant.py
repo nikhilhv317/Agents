@@ -62,6 +62,11 @@ def draft(patient_id: int, complaint: str = "", findings: str = "",
         if li:
             findings = li["content"]
 
+    # long histories: keep the recent visits plus the ones most related to today
+    # (agents/memory.py); the same trimmed record is used for grounding, so the
+    # [V1..] numbering in the prompt and the citation check match
+    from agents import memory
+    patient = {**patient, "visits": memory.relevant_visits(patient, f"{complaint} {findings}")}
     prompt = _prompt(patient, complaint, findings, findings_from_exam)
     try:
         data = llm.complete_json(SYSTEM, prompt, schema=_Soap.model_json_schema(),

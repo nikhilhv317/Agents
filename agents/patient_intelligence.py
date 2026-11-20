@@ -39,13 +39,20 @@ def _keywords(text: str) -> set[str]:
     return {w.strip(".,()") for w in (text or "").lower().split()} - _STOPWORDS
 
 
-def _select_relevant_visits(visits: list[dict], max_visits: int = MAX_CONTEXT_VISITS) -> tuple[list[dict], int]:
+def _select_relevant_visits(visits: list[dict], max_visits: int = MAX_CONTEXT_VISITS,
+                            patient_id: int | None = None) -> tuple[list[dict], int]:
     """Return (selected visits in chronological order, total visit count).
-    Recency-anchored, then backfilled with older visits that share vocabulary
-    with the recent ones — a cheap proxy for 'topically related to now'."""
+    Recency-anchored, then backfilled with the older visits most related to the
+    recent ones — by embedding similarity (agents/memory.py) when a patient id is
+    given, otherwise by shared vocabulary."""
     total = len(visits)
     if total <= max_visits:
         return visits, total
+    if patient_id is not None:
+        from agents import memory
+        query = " ".join(f"{v['complaint']} {v['diagnosis']}" for v in visits[-RECENT_ANCHOR:])
+        return memory.relevant_visits({"id": patient_id, "visits": visits}, query,
+                                      max_visits, RECENT_ANCHOR), total
 
     recent = visits[-RECENT_ANCHOR:]
     anchor_kw = set().union(*(_keywords(f"{v['complaint']} {v['diagnosis']}") for v in recent))
@@ -115,7 +122,7 @@ class PatientIntelligenceAgent(BaseAgent):
 
     def reason(self, context: dict) -> AgentResult:
         subject = f"patient:{context['id']}"
-        selected, total = _select_relevant_visits(context["visits"])
+        selected, total = _select_relevant_visits(context["visits"], patient_id=context["id"])
         try:
             data = llm.complete_json(SYSTEM, self._prompt(context, selected),
                                      schema=_BriefResponse.model_json_schema(),

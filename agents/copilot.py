@@ -142,6 +142,17 @@ def get_imaging_findings(patient_id: int) -> str:
 
 
 @tool
+def search_patient_history(patient_id: int, query: str) -> list:
+    """Search one patient's whole history (visits, notes, scan findings, reports) by
+    meaning, e.g. "gum swelling" or "root canal". Returns the most relevant entries
+    with their dates, best first."""
+    from agents import memory
+    _active_patient(patient_id)
+    return [{"date": h["date"], "kind": h["kind"], "text": h["text"], "relevance": h["score"]}
+            for h in memory.search(int(patient_id), query, k=5)]
+
+
+@tool
 def get_schedule(day: str = "today") -> dict:
     """Appointments still pending on a day ('today', 'tomorrow' or YYYY-MM-DD), each with
     the no-show model's probability of attending, risk band (high = likely no-show) and reason."""
@@ -185,7 +196,7 @@ def propose_patient_message(patient_id: int, message: str) -> dict:
 
 
 READ_TOOLS = [find_patients, get_patient_record, get_patient_notes,
-              get_imaging_findings, get_schedule]
+              get_imaging_findings, search_patient_history, get_schedule]
 WRITE_TOOLS = [propose_followup, propose_chart_note, propose_patient_message]
 TOOLS = {t.name: t for t in READ_TOOLS + WRITE_TOOLS}
 
@@ -255,8 +266,10 @@ def tools_node(state: CopilotState) -> dict:
                 raise ValueError(f"unknown tool '{call['name']}'")
             pid = call["args"].get("patient_id")
             if pid is not None and int(pid) not in grounded:
-                raise ValueError(f"patient_id {pid} hasn't come from a lookup yet. "
-                                 "Call find_patients (or get_schedule) first and use an id it returns.")
+                known = sorted(grounded | _grounded_patient_ids(out))
+                hint = (f" Ids returned so far: {known} — call {call['name']} again with one of them."
+                        if known else " Call find_patients (or get_schedule) first and use an id it returns.")
+                raise ValueError(f"patient_id {pid} hasn't come from a lookup.{hint}")
             result = t.invoke(call["args"])
             ok = True
         except Exception as e:   # bad args, unknown patient, bad date -> tell the model
@@ -340,6 +353,10 @@ def _check_action_claims(answer: str, actions: list) -> tuple[str, bool]:
 
 # ---- entry point ------------------------------------------------------------
 
+_DEFERS = re.compile(r"\b(wait for (?:the )?(?:next )?tool|next tool result|once (?:i have |it is )?confirmed|"
+                     r"i(?:'ll| will) (?:now |next )?(?:retrieve|look up|fetch|check|call))\b", re.IGNORECASE)
+
+
 def _invoke(msgs: list) -> dict:
     return _graph.invoke({"messages": msgs, "rounds": 0, "steps": [], "actions": []},
                          {"recursion_limit": 2 * MAX_TOOL_ROUNDS + 4})
@@ -373,6 +390,13 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
         if not state["steps"] and _names_a_patient(message):
             msgs = msgs + [HumanMessage(content="Look this patient up with your tools before answering.")]
             state = _invoke(msgs)
+        # ...or stops mid-task promising to continue ("wait for the next tool
+        # result") after a rejected call (eval case prompt-injection-in-chart-note)
+        elif _DEFERS.search(state["messages"][-1].content or ""):
+            state = _graph.invoke({"messages": state["messages"] + [HumanMessage(
+                content="Continue now: call the tools you still need, then answer.")],
+                "rounds": state["rounds"], "steps": state["steps"], "actions": state["actions"]},
+                {"recursion_limit": 2 * MAX_TOOL_ROUNDS + 4})
     except Exception as e:   # Ollama down, model not pulled, etc.
         return {"answer": f"The Copilot couldn't reach the local model ({model}). "
                           f"Check Ollama is running and run: ollama pull {model}",

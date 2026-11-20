@@ -78,3 +78,10 @@
   question: "Summarise the notes on Anita Desai's chart."
   expect_tools: [find_patients, get_patient_notes]
   expect_actions: 0
+
+- id: history-search-by-meaning
+  setup:
+    - note: {patient: 3, kind: soap, content: "S: Lower front tooth feels wobbly when biting. O: Grade 2 mobility #31. A: Chronic periodontitis. P: Splinting discussed."}
+  question: "Has Suresh Rao ever had a problem with a wobbly tooth? Search his history."
+  expect_tools: [find_patients, search_patient_history]
+  answer_contains_any: ["mobility", "loose", "wobbly", "#31", "31"]
