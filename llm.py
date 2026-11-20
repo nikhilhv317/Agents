@@ -37,13 +37,27 @@ import json
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:1.7b")  # tiny + fast; qwen3 family so think=False works
 HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
-# task name -> model tag. Every entry points at DEFAULT_MODEL for v1; bump an
-# individual task here (after pulling that tag) without touching agent code.
+# Model tiers. Tasks are routed to a tier, and the tier to a tag, so swapping the
+# model behind a tier (or moving a task between tiers after an eval) is one line.
+TIERS: dict[str, str] = {
+    "fast":   DEFAULT_MODEL,                                  # qwen3:1.7b, ~3 s/draft on the GPU
+    "strong": os.getenv("STRONG_MODEL", "qwen2.5:3b"),        # bigger, already pulled locally
+    "lora":   os.getenv("LORA_MODEL", "dentavis-clinical"),   # fine-tuned adapter (ml/lora/)
+}
+
+# task name -> tier, set from measurements (evals/README.md "Model routing").
+TASK_TIERS: dict[str, str] = {
+    "report_summary":       "fast",   # report_agent.py — 3-4 line summary
+    "patient_brief":        "fast",   # patient_intelligence.py — clinical brief
+    "soap_note":            "fast",   # clinical_assistant.py — SOAP note
+    "scheduling_reminder":  "fast",   # scheduling_agent.py — SMS reminder text
+}
+
+# task name -> model tag. MODEL_<TASK> env vars override one task; LLM_TASK_MODELS
+# ("soap_note=qwen2.5:3b,report_summary=qwen2.5:3b") overrides several — that's
+# how `evals/run.py --model` compares models without code changes.
 TASK_MODELS: dict[str, str] = {
-    "report_summary":       DEFAULT_MODEL,   # report_agent.py — 3-4 line summary
-    "patient_brief":        DEFAULT_MODEL,   # patient_intelligence.py — clinical brief
-    "soap_note":            DEFAULT_MODEL,   # clinical_assistant.py — SOAP note
-    "scheduling_reminder":  DEFAULT_MODEL,   # scheduling_agent.py — SMS reminder text
+    **{t: os.getenv(f"MODEL_{t.upper()}", TIERS[tier]) for t, tier in TASK_TIERS.items()},
     # copilot.py — multi-step tool calling. Same 1.7B model, but run with
     # thinking ON (see copilot._model): with thinking off it describes tool
     # calls in prose instead of making them. Measured on this CPU box, a
@@ -53,6 +67,10 @@ TASK_MODELS: dict[str, str] = {
     # a bigger model here, use a non-thinking build such as qwen3:4b-instruct-2507.
     "copilot":              os.getenv("COPILOT_MODEL", DEFAULT_MODEL),
 }
+for _pair in filter(None, os.getenv("LLM_TASK_MODELS", "").split(",")):
+    _task, _, _tag = _pair.partition("=")
+    if _task.strip() and _tag.strip():
+        TASK_MODELS[_task.strip()] = _tag.strip()
 
 
 def resolve_model(task: str | None) -> str:
@@ -109,6 +127,12 @@ def complete_json(system: str, user: str, schema: dict | None = None,
             )
         except TypeError:
             # older ollama client without think= support
+            resp = client.chat(model=model, messages=msgs, format=fmt,
+                               keep_alive="30m", options={"temperature": 0})
+        except Exception as e:
+            if "think" not in str(e).lower():
+                raise
+            # a non-thinking model (e.g. the qwen2.5 "strong" tier) rejects think=
             resp = client.chat(model=model, messages=msgs, format=fmt,
                                keep_alive="30m", options={"temperature": 0})
         content = resp["message"]["content"]

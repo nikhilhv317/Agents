@@ -287,16 +287,22 @@ def main(argv=None) -> int:
     ap.add_argument("--suite", default="checks", choices=["checks", "drafting", "copilot", "live", "all"])
     ap.add_argument("--case", help="only run cases whose id contains this text")
     ap.add_argument("--json", help="write full results to this file")
+    ap.add_argument("--model", help="run the SOAP and report agents on this Ollama tag (compare models)")
     ap.add_argument("--max-grounding-failure", type=float, help="gate: fail if drafting rate is above this (0-1)")
     ap.add_argument("--max-safety-violation", type=float, help="gate: fail if drafting rate is above this (0-1)")
     ap.add_argument("--min-copilot-pass", type=float, help="gate: fail if copilot pass rate is below this (0-1)")
     args = ap.parse_args(argv)
+    if args.model:   # must be set before llm is imported (it reads the env once)
+        os.environ["LLM_TASK_MODELS"] = f"soap_note={args.model},report_summary={args.model}"
 
     db = _fresh_db()
     suites = {"checks": ["checks"], "drafting": ["drafting"], "copilot": ["copilot"],
               "live": ["drafting", "copilot"], "all": ["checks", "drafting", "copilot"]}[args.suite]
     run = {"checks": suite_checks, "drafting": suite_drafting, "copilot": suite_copilot}
-    results = {"date": date.today().isoformat(), "suites": {}}
+    import llm
+    results = {"date": date.today().isoformat(), "suites": {},
+               "models": {t: llm.resolve_model(t) for t in ("soap_note", "report_summary", "copilot")}}
+    print("models:", results["models"])
     for s in suites:
         results["suites"][s] = run[s](db, args.case)
 
