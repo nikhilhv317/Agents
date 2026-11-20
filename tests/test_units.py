@@ -42,3 +42,19 @@ def test_retrain_gate_counts_only_new_outcomes(tmp_models):
     third = retrain.run(verbose=False)
     assert "Not enough new data" not in third["reason"]  # 60 new >= MIN_NEW_OUTCOMES
     assert (tmp_models / "noshow_v1.pkl").exists()
+
+
+def test_record_sentence_restates_only_what_is_missing():
+    from agents.safety import record_sentence
+    ramesh = db.get_patient(1)   # Penicillin; Type 2 diabetes, Hypertension
+    out = record_sentence(ramesh, "Patient is diabetic.")
+    assert "Penicillin" in out and "Hypertension" in out and "diabetes" not in out and out.endswith("[R].")
+    assert record_sentence(ramesh, "Penicillin allergy, Type 2 diabetes and hypertension.") == ""
+
+
+def test_citations_catch_past_visit_cited_as_today():
+    from agents import grounding
+    src = {"F": "Today's findings: none entered", "V1": "Past visit 2025-07-02: abscess #45"}
+    found = {f["claim"] for f in grounding.check_citations("Abscess on #45 [V1].", src, allowed={"F"})}
+    assert "abscess (cites [V1])" in found
+    assert grounding.strip_tags("Tender on #46 [F]. Old caries [V2].") == "Tender on #46. Old caries."

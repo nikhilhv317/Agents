@@ -91,12 +91,14 @@ def _run_check(case: dict, db) -> set | bool:
     if kind == "soap":
         from agents import clinical_assistant
         found = clinical_assistant.ground_soap(db.get_patient(case["patient"]), case.get("complaint", ""),
-                                               case.get("findings", ""), case["soap"], case.get("exam", False))
+                                               case.get("findings", ""), case["soap"], case.get("exam", False),
+                                               require_citations=case.get("citations", False))
         return {f["claim"] for f in found}
     if kind == "report":
         from agents import report_agent
         found = report_agent.ground_report(db.get_patient(case["patient"]), case.get("imaging", ""),
-                                           case.get("clinical", ""), case["summary"], case.get("exam", False))
+                                           case.get("clinical", ""), case["summary"], case.get("exam", False),
+                                           require_citations=case.get("citations", False))
         return {f["claim"] for f in found}
     if kind == "grounding":
         from agents import grounding
@@ -106,7 +108,7 @@ def _run_check(case: dict, db) -> set | bool:
                                 allow_negated=case.get("allow_negated", False))
         return {f["claim"] for f in found}
     if kind == "safety":
-        from agents.visit_pipeline import safety_check
+        from agents.safety import safety_check
         return _safety_codes(safety_check(db.get_patient(case["patient"]), case["text"]))
     if kind == "action_claim":
         from agents import copilot
@@ -151,6 +153,13 @@ def suite_checks(db, only: str | None) -> dict:
 
 # ---- drafting: SOAP + report agents on the live model ------------------------
 
+def _is_citation_claim(claim: str) -> bool:
+    """Citation-format problems (missing/wrong/unknown tags), counted apart from
+    invented clinical content so the grounding rate stays comparable over time."""
+    return (claim == "no citations" or claim.startswith("unknown source")
+            or claim.endswith(("(uncited)", "(not in cited source)")) or "(cites [" in claim)
+
+
 def _reset_patient(db, pid: int, imaging: str | None = None):
     conn = db.connect()
     conn.execute("DELETE FROM patient_notes WHERE patient_id=?", (pid,))
@@ -180,22 +189,27 @@ def suite_drafting(db, only: str | None) -> dict:
         if r["source"] != "llm":
             print("  local model unavailable (agent fell back to demo output) — is Ollama running?")
             return {"summary": {"skipped": "model unavailable"}, "cases": rows}
+        claims = [u["claim"] for u in r.get("unsupported", [])]
         row = {"id": case["id"], "kind": case["kind"], "seconds": round(time.time() - t0, 1),
-               "unsupported": [u["claim"] for u in r.get("unsupported", [])],
+               "unsupported": [c for c in claims if not _is_citation_claim(c)],
+               "citation_issues": [c for c in claims if _is_citation_claim(c)],
                "safety": sorted(_safety_codes(safety_check(db.get_patient(pid), text))),
                "text": text}
         rows.append(row)
         flags = (f"unsourced {row['unsupported']} " if row["unsupported"] else "") + \
-                (f"safety {row['safety']}" if row["safety"] else "")
+                (f"safety {row['safety']} " if row["safety"] else "") + \
+                (f"citations {row['citation_issues']}" if row["citation_issues"] else "")
         print(f"  [{'ok  ' if not flags else 'flag'}] {row['kind']:<6} {row['id']:<34} {row['seconds']:>5}s  {flags}")
     n = len(rows)
     g = sum(bool(r["unsupported"]) for r in rows)
     s = sum(bool(r["safety"]) for r in rows)
+    ci = sum(bool(r["citation_issues"]) for r in rows)
     summary = {"cases": n, "grounding_failures": g, "grounding_failure_rate": round(g / n, 3) if n else None,
                "safety_violations": s, "safety_violation_rate": round(s / n, 3) if n else None,
+               "citation_failures": ci, "citation_failure_rate": round(ci / n, 3) if n else None,
                "mean_seconds": round(sum(r["seconds"] for r in rows) / n, 1) if n else None}
     print(f"  -> grounding failure rate {_pct(g, n)} ({g}/{n}), safety violation rate {_pct(s, n)} "
-          f"({s}/{n}), mean {summary['mean_seconds']}s per draft")
+          f"({s}/{n}), citation failure rate {_pct(ci, n)} ({ci}/{n}), mean {summary['mean_seconds']}s per draft")
     return {"summary": summary, "cases": rows}
 
 

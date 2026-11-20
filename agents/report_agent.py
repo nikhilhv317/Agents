@@ -22,9 +22,11 @@ from pydantic import BaseModel
 import db
 import llm
 
-SYSTEM = """You are a dental Report Assistant. Given a patient's record, imaging findings,
-and the clinician's findings, write a concise clinical summary of 3-4 short lines only.
-No headings, no preamble, no bullet points. Synthesise only from the data given.
+SYSTEM = """You are a dental Report Assistant. From the numbered sources only, write a
+concise clinical summary of 3-4 short lines. No headings, no preamble, no bullet points.
+Never invent findings, examinations, measurements or tooth numbers.
+Always state each recorded allergy and condition exactly as written in [R].
+End every sentence with the tag(s) of the source(s) it uses, e.g. "Advanced caries on imaging [I]."
 Respond with ONLY JSON: {"summary": "the 3-4 line summary"}."""
 
 
@@ -46,15 +48,22 @@ def _receive_imaging_handoff(patient_id: int) -> str:
 
 
 def ground_report(patient: dict, imaging: str, clinical: str, summary: str,
-                  exam_given: bool = False) -> list[dict]:
+                  exam_given: bool = False, require_citations: bool = False) -> list[dict]:
     """Every finding in the summary must come from what the model was given:
     the record, imaging and clinician findings. Visit history is NOT in the
-    prompt, so a finding found only there is flagged as copied from a past visit."""
+    prompt, so a finding found only there is flagged as copied from a past visit.
+    Citations are checked when present (always, for model drafts)."""
     from agents import grounding
     sources = (f"Imaging: {imaging}\nClinical: {clinical}\n" + grounding.record_sources(patient))
-    return grounding.check(summary, sources,
-                           exam_findings_given=exam_given or grounding.mentions_exam(sources),
-                           history=grounding.history_sources(patient))
+    found = grounding.check(summary, sources,
+                            exam_findings_given=exam_given or grounding.mentions_exam(sources),
+                            history=grounding.history_sources(patient))
+    if require_citations:
+        found += grounding.no_citations_issue(summary)
+    if grounding.has_citations(summary):
+        found += grounding.check_citations(summary, grounding.report_sources(patient, imaging, clinical),
+                                           require=require_citations)
+    return found
 
 
 def generate(patient_id: int, clinical: str = "", clinical_from_exam: bool = True) -> dict:
@@ -66,13 +75,13 @@ def generate(patient_id: int, clinical: str = "", clinical_from_exam: bool = Tru
 
     imaging = _receive_imaging_handoff(patient_id)
 
+    from agents import grounding
     from agents.untrusted import defuse   # the name can come from the public booking page
     prompt = (
         f"Patient: {defuse(patient['name'])}, {patient['age']}y {patient['sex']}\n"
-        f"Allergies: {patient['allergies'] or 'none'}\n"
-        f"History: {patient['conditions'] or 'none'}\n"
-        f"Imaging findings: {imaging}\n"
-        f"Clinician findings: {clinical or '(none provided)'}\n\n"
+        f"Allergies: {patient['allergies'] or 'none recorded'}\n"
+        f"Medical conditions: {patient['conditions'] or 'none recorded'}\n\n"
+        f"Sources:\n{grounding.format_sources(grounding.report_sources(patient, imaging, clinical))}\n\n"
         "Write the 3-4 line summary."
     )
     try:
@@ -99,13 +108,15 @@ def generate(patient_id: int, clinical: str = "", clinical_from_exam: bool = Tru
     rid = db.create_report(patient_id, patient["name"], imaging, clinical,
                            ai_summary, status="draft", images=images_json)
     unsupported = ground_report(patient, imaging, clinical, ai_summary,
-                                exam_given=clinical_from_exam and bool(clinical.strip()))
+                                exam_given=clinical_from_exam and bool(clinical.strip()),
+                                require_citations=(source == "llm"))
     if unsupported:
         db.add_log("report", f"patient:{patient_id}",
                    f"Grounding check: {len(unsupported)} unsourced finding(s) in report draft #{rid}")
     return {"report_id": rid, "patient_id": patient_id, "patient": patient["name"],
             "imaging": imaging, "clinical": clinical, "ai_summary": ai_summary,
-            "source": source, "status": "draft", "images": imgs, "unsupported": unsupported}
+            "source": source, "status": "draft", "images": imgs, "unsupported": unsupported,
+            "sources": grounding.report_sources(patient, imaging, clinical)}
 
 
 def finalize(report_id: int) -> dict:

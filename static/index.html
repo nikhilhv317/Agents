@@ -66,6 +66,7 @@
   .status { font-size:13px; color:var(--muted); margin-top:8px; min-height:18px; }
   .empty { color:var(--muted); font-size:13px; padding:22px 0; text-align:center; }
   .agent-summary { font-size:14px; line-height:1.55; background:#f6fafe; border:1px solid #e3edf9; border-radius:8px; padding:14px 16px; }
+  .cite { display:inline-block; font-size:10px; font-weight:600; line-height:1; padding:2px 5px; margin-left:3px; border-radius:4px; background:#e3edf9; color:#2563a8; vertical-align:1px; cursor:help; }
   .stage { margin-top:16px; } .stage h4 { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:0 0 10px; display:flex; align-items:center; gap:8px; }
   .stage h4 .num { width:18px; height:18px; border-radius:50%; background:var(--blue); color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; }
   .insight { display:flex; gap:10px; padding:10px 0; border-bottom:1px solid #f0f1f4; font-size:13px; } .insight .sev { width:8px; height:8px; border-radius:50%; margin-top:5px; flex-shrink:0; background:var(--muted); }
@@ -479,6 +480,9 @@
 
 const $ = s => document.querySelector(s);
 const esc = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+// AI text cites its sources inline ("... [F]", "[V2]"): show each tag as a chip whose tooltip is the source
+const cite = (s, sources) => esc(s).replace(/\[\s*([A-Z]\d*(?:\s*[,;\/]\s*[A-Z]\d*)*)\s*\]/g,
+  (m, g) => g.split(/\s*[,;\/]\s*/).map(id => `<span class="cite" title="${esc((sources||{})[id]||'Source '+id).replace(/"/g,'&quot;')}">${id}</span>`).join(''));
 const bandLabel = b => b==='low'?'likely':b==='medium'?'uncertain':'unlikely';
 const VERDICT_BAND = {"Disease Detected":"high","Abnormal — needs review":"medium","Healthy — no findings":"low","Non-dental — rejected":"medium"};
 const TITLES = {dashboard:'Dashboard',appointments:'Appointments',scan:'Scan',report:'Create Report',pipeline:'Visit Pipeline',copilot:'Clinic Copilot',reports:'Reports',patients:'Patients',users:'Users',settings:'Settings'};
@@ -824,7 +828,7 @@ async function genReport(){
   if(!r||!r.ai_summary){if(rr)rr.innerHTML='<div class="empty">Could not reach the report agent.</div>';if(b){b.disabled=false;b.textContent='Generate report';}return;}
   const tag=r.source==='llm'?'<span class="tag llm">Local model</span>':'<span class="tag demo">Demo (offline)</span>';
   if(rr)rr.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px"><div class="section-label" style="margin:0">AI summary</div>${tag}</div>
-    <div class="agent-summary">${esc(r.ai_summary)}</div>${repGrounding(r.unsupported)}
+    <div class="agent-summary">${cite(r.ai_summary, r.sources)}</div>${repGrounding(r.unsupported)}
     <div class="btn-row"><button class="btn primary" id="btn-finalize-report" data-id="${r.report_id}">Finalize report</button></div>
     <div class="disclaimer">Review the summary; finalizing files it under Reports.</div>`;
   const fr=$('#btn-finalize-report');if(fr)fr.onclick=()=>finalizeReport(r.report_id);
@@ -978,7 +982,7 @@ async function viewReport(id){
       <tr><td class="k">Allergies</td><td class="v">${esc((p&&p.allergies)||'None recorded')}</td>
           <td class="k">History</td><td class="v">${esc((p&&p.conditions)||'None recorded')}</td></tr>
     </table>
-    <div class="rpt-sec"><div class="rpt-lab">Clinical Summary</div><div class="rpt-body">${esc(r.ai_summary||'')}</div></div>
+    <div class="rpt-sec"><div class="rpt-lab">Clinical Summary</div><div class="rpt-body">${cite(r.ai_summary||'')}</div></div>
     <div class="rpt-sec"><div class="rpt-lab">Imaging Findings</div><div class="rpt-body">${esc(r.imaging||'No imaging findings recorded.')}</div></div>
     <div class="rpt-sec"><div class="rpt-lab">Clinical Findings</div><div class="rpt-body">${esc(r.clinical||'None recorded.')}</div></div>
     ${imgs.length?`<div class="rpt-sec"><div class="rpt-lab">Scan Images — Original &amp; AI Detection (${imgs.length})</div>

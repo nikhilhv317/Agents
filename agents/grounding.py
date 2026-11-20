@@ -26,6 +26,7 @@ Rules:
 from __future__ import annotations
 
 import re
+from datetime import date
 
 # canonical finding -> regex matching its word forms
 FINDINGS = {
@@ -131,14 +132,20 @@ def check(draft: str, sources: str, exam_findings_given: bool = False,
             seen.add(claim)
             out.append({"claim": claim, "detail": detail, "snippet": snippet[:160]})
 
-    for sent in _sentences(draft):
+    for sent in _sentences(strip_tags(draft)):
         if not exam_findings_given and _EXAM_CLAIM.search(sent):
             add("examination claimed",
                 "The draft describes an examination, but no exam findings were entered.", sent)
         for name, rx in _FINDING_RE.items():
             for m in rx.finditer(sent):
-                if (_hedged(sent, m.start()) or rx.search(src) or _ADVICE_AFTER.match(sent, m.end())
+                if (_hedged(sent, m.start()) or _ADVICE_AFTER.match(sent, m.end())
                         or (allow_negated and _negated(sent, m.start()))):
+                    continue
+                if rx.search(src):
+                    # in the sources — but stated as CURRENT when every mention is a dated past record?
+                    if _CURRENT.search(sent) and _only_in_past_records(rx, src):
+                        add(name, f"'{m.group(0)}' is stated as current, but the sources only have it "
+                                  "in a past, dated record.", sent)
                     continue
                 add(name, why(m.group(0), rx), sent)
                 break
@@ -149,6 +156,124 @@ def check(draft: str, sources: str, exam_findings_given: bool = False,
             if not re.search(rf"(?<![\d.]){re.escape(m.group(1))}\s?mm", src, re.IGNORECASE):
                 add(f"{m.group(1)} mm", f"Measurement '{m.group(0)}' does not appear in any source.", sent)
     return out
+
+
+# ---- timing: a past finding stated as current ----------------------------------
+# Word matching alone passed "Deepa has an active abscess right now" because
+# "abscess" IS in her record — from a 2025 visit. If the sentence asserts the
+# present and every mention in the sources sits next to a past date, flag it.
+_CURRENT = re.compile(r"\b(currently|current|active|right now|at present|presently|ongoing|still|today)\b",
+                      re.IGNORECASE)
+_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+
+
+def _only_in_past_records(rx, src: str) -> bool:
+    today = date.today().isoformat()
+    hits = list(rx.finditer(src))
+    for m in hits:
+        line_start = src.rfind("\n", 0, m.start()) + 1
+        dates = _DATE.findall(src[max(line_start, m.start() - 160):m.start()])
+        if not dates or "-".join(dates[-1]) >= today:
+            return False          # an undated (record/today) or current mention exists
+    return bool(hits)
+
+
+# ---- citations ------------------------------------------------------------------
+# Drafts cite their sources inline: "Tender to percussion on #46 [F]." Sources are
+# a dict of id -> text: R record, C complaint, F findings, I imaging, V1..Vn past
+# visits (dated). Checking a claim against the source it CITES (not the whole pile)
+# catches a finding borrowed from the wrong place, and `allowed` stops the Objective
+# section citing a past visit as today's finding.
+_TAG = re.compile(r"\[\s*([A-Z]\d*(?:\s*[,;/]\s*[A-Z]\d*)*)\s*\]")
+
+
+def strip_tags(text: str) -> str:
+    return re.sub(r"\s+([.;,])", r"\1", _TAG.sub("", text or ""))
+
+
+def cited_ids(sentence: str) -> list[str]:
+    return [i.strip() for g in _TAG.findall(sentence) for i in re.split(r"[,;/]", g) if i.strip()]
+
+
+def has_citations(text: str) -> bool:
+    return bool(cited_ids(text or ""))
+
+
+def no_citations_issue(text: str) -> list[dict]:
+    """Note-level: a model draft that cites nothing at all can't be verified."""
+    if (text or "").strip() and not has_citations(text):
+        return [{"claim": "no citations", "snippet": text[:160],
+                 "detail": "The draft doesn't cite any source, so its findings can't be verified."}]
+    return []
+
+
+def check_citations(draft: str, sources: dict, allowed: set | None = None,
+                    require: bool = True) -> list[dict]:
+    """Per-sentence citation check for one piece of text (a section or a summary).
+    require: flag findings with no tag. The note-level "no citations at all" check
+    is no_citations_issue(), run once on the whole draft by the caller."""
+    out, seen = [], set()
+
+    def add(claim, detail, snippet):
+        if claim not in seen:
+            seen.add(claim)
+            out.append({"claim": claim, "detail": detail, "snippet": snippet[:160]})
+
+    sents = _sentences(draft)
+    for sent in sents:
+        ids, bare = cited_ids(sent), strip_tags(sent)
+        terms = [(n, m) for n, rx in _FINDING_RE.items() for m in [rx.search(bare)]
+                 if m and not _hedged(bare, m.start()) and not _negated(bare, m.start())
+                 and not _ADVICE_AFTER.match(bare, m.end())]
+        for i in ids:
+            if i not in sources:
+                add(f"unknown source [{i}]", f"[{i}] is not one of the sources given.", sent)
+        if not terms:
+            continue
+        if not ids:
+            if require:
+                add(f"{terms[0][0]} (uncited)", "A finding with no source tag.", sent)
+            continue
+        if allowed is not None:
+            for i in ids:
+                if i in sources and i not in allowed:
+                    add(f"{terms[0][0]} (cites [{i}])",
+                        f"This section must describe today, but it cites [{i}] ({sources[i][:60]}).", sent)
+        cited = "\n".join(sources[i] for i in ids if i in sources)   # disallowed cites are flagged above
+        for name, _ in terms:
+            if not _FINDING_RE[name].search(cited):
+                add(f"{name} (not in cited source)",
+                    f"'{name}' does not appear in the cited source(s) {', '.join('[' + i + ']' for i in ids)}.", sent)
+    return out
+
+
+def soap_sources(patient: dict, complaint: str, findings: str, findings_from_exam: bool) -> dict:
+    # C and F are always present (the model cites [F] even when nothing was entered;
+    # "none entered" turns that into a checkable "not in cited source" instead of an
+    # unknown tag).
+    src = {"R": record_sources(patient).replace("\n", "; "),
+           "C": f"Today's chief complaint: {(complaint or '').strip() or 'none entered'}"}
+    if (findings or "").strip():
+        src["F"] = (f"Today's findings ({'entered by the clinician' if findings_from_exam else 'from imaging, not an examination'}): "
+                    f"{findings}")
+    else:
+        src["F"] = "Today's examination findings: none entered"
+    for n, v in enumerate(patient.get("visits", []), 1):
+        src[f"V{n}"] = f"Past visit {v['date']}: {v['complaint']}; {v['diagnosis']}; {v['treatment']}; {v['notes']}"
+    return src
+
+
+def report_sources(patient: dict, imaging: str, clinical: str) -> dict:
+    src = {"R": record_sources(patient).replace("\n", "; ")}
+    if (imaging or "").strip():
+        src["I"] = f"Imaging today: {imaging}"
+    if (clinical or "").strip():
+        src["F"] = f"Clinician findings today: {clinical}"
+    return src
+
+
+def format_sources(sources: dict) -> str:
+    return "\n".join(f"[{k}] {v}" for k, v in sources.items())
 
 
 def mentions_exam(text: str) -> bool:

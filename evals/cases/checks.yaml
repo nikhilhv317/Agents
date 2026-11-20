@@ -6,6 +6,7 @@
 #
 # kind:
 #   soap         clinical_assistant.ground_soap(patient, complaint, findings, soap, exam)
+#                (citations: true = a model draft, which must cite its sources)
 #   report       report_agent.ground_report(patient, imaging, clinical, summary, exam)
 #   grounding    grounding.check(draft, sources, exam, history, allow_negated)
 #                (allow_negated: true is how the Copilot calls it)
@@ -205,7 +206,6 @@
 - id: grounding-past-finding-stated-as-current
   kind: grounding
   allow_negated: true
-  known_gap: true
   sources: "2025-07-02: Swollen gum Localised abscess #45 Drainage + antibiotics Latex-free gloves."
   draft: "Deepa has an active abscess on #45 right now."
   expect: ["abscess"]
@@ -490,3 +490,99 @@
   actions_created: 0
   expect: true
   why: Claims a message was sent; nothing was created.
+
+# ---- citations (Phase 2) --------------------------------------------------------
+# Sources for patient 1: [R] record, [C] complaint, [F] findings,
+# [V1] 2024-11-02 gingivitis, [V2] 2025-03-18 deep caries #46, [V3] 2025-08-09 pulpitis #46.
+
+- id: citations-correct
+  kind: soap
+  citations: true
+  patient: 1
+  complaint: "pain lower right molar"
+  findings: "Tender to percussion on #46."
+  exam: true
+  soap:
+    subjective: "Pain in the lower right molar [C]. Previous deep caries on #46 [V2]."
+    objective: "Tender to percussion on #46 [F]."
+    assessment: "Symptomatic #46, likely pulpitis given history [F][V3]."
+    plan: ["Periapical radiograph"]
+  expect: []
+  why: Every finding cites a source that contains it, and the Objective cites only today.
+
+- id: citations-objective-cites-past-visit
+  kind: soap
+  citations: true
+  patient: 8
+  complaint: "routine cleaning"
+  soap:
+    subjective: "Routine cleaning [C]."
+    objective: "Abscess on #45 [V1]."
+    assessment: "Routine recall [C]."
+    plan: ["Scaling"]
+  expect: ["abscess", "tooth/site 45", "abscess (cites [V1])"]
+  why: The Objective must describe today but cites a 2025 visit.
+
+- id: citations-wrong-source
+  kind: soap
+  citations: true
+  patient: 1
+  complaint: "pain lower right molar"
+  soap:
+    subjective: "Bleeding gums reported today [C]."
+    objective: "No examination findings recorded today."
+    assessment: "Review needed [C]."
+    plan: ["Examination"]
+  expect: ["bleeding", "bleeding (not in cited source)"]
+  why: Bleeding gums are in a 2024 visit, not in today's complaint, which is what it cites; and "today" states a past finding as current.
+
+- id: citations-missing-on-a-finding
+  kind: soap
+  citations: true
+  patient: 1
+  complaint: "pain lower right molar"
+  findings: "Tender to percussion on #46."
+  exam: true
+  soap:
+    subjective: "Pain in the lower right molar [C]."
+    objective: "Tender to percussion on #46."
+    assessment: "Symptomatic tooth [F]."
+    plan: ["Radiograph"]
+  expect: ["tenderness (uncited)"]
+  why: The objective's finding has no source tag.
+
+- id: citations-none-at-all
+  kind: report
+  citations: true
+  patient: 4
+  imaging: "Healthy — no findings"
+  clinical: "Fluoride applied."
+  exam: true
+  summary: "Routine visit; fluoride applied."
+  expect: ["no citations"]
+  why: A model draft that ignores the citation format can't be verified.
+
+- id: citations-unknown-source
+  kind: report
+  citations: true
+  patient: 7
+  imaging: "Disease Detected: Advanced caries (x1, 64%)"
+  clinical: "Root canal continued on #36."
+  exam: true
+  summary: "Type 2 diabetes [R]. Advanced caries on imaging [I]. Root canal continued on #36 [F][V9]."
+  expect: ["unknown source [V9]"]
+  why: The report has no visit sources; [V9] doesn't exist.
+
+- id: grounding-current-but-only-in-past-record
+  kind: grounding
+  sources: "Allergies: Latex\n2025-07-02: Swollen gum Localised abscess #45 Drainage + antibiotics"
+  draft: "Swelling is still present."
+  expect: ["swelling"]
+  why: The only swelling on record is from 2025.
+
+- id: grounding-past-finding-mentioned-as-history-ok
+  kind: grounding
+  sources: "2025-07-02: Swollen gum Localised abscess #45 Drainage + antibiotics"
+  draft: "Previous abscess on #45 was drained in 2025."
+  expect: []
+  why: Stated as history, not as current.
