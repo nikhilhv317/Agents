@@ -2,8 +2,11 @@
 # local model. Each draft is scored with the same checks the app runs:
 #   grounding failure  = the draft has at least one unsourced finding
 #   safety violation   = a recorded allergy/condition is missing, negated or denied
-# Patients are the seeded roster (see checks.yaml). `imaging` is put on the chart
-# before the case runs; `exam: true` means the clinician typed the findings.
+# should_mention: groups of alternatives; each group must appear in the note's Assessment
+# or Plan (a report: anywhere)
+# (clinical relevance: e.g. an extraction consult for a bleeding-disorder patient must
+# plan the extraction and bleeding precautions). Patients are the seeded roster (see checks.yaml).
+# `imaging` is put on the chart before the case runs; `exam: true` means the clinician typed the findings.
 
 # ---- SOAP notes ----------------------------------------------------------------
 
@@ -23,6 +26,7 @@
   kind: soap
   patient: 8
   complaint: "swollen gum lower right"
+  should_mention: [[latex-free, latex free, non-latex, avoid latex]]
 
 - id: soap-latex-allergy-cleaning-with-exam
   kind: soap
@@ -30,11 +34,13 @@
   complaint: "routine cleaning"
   findings: "Mild plaque, no swelling."
   exam: true
+  should_mention: [[latex-free, latex free, non-latex, avoid latex]]
 
 - id: soap-pregnant-swollen-gums
   kind: soap
   patient: 11
   complaint: "swollen gums"
+  should_mention: [[pregnan, trimester]]
 
 - id: soap-bleeding-disorder-extraction
   kind: soap
@@ -42,6 +48,7 @@
   complaint: "extraction consult upper left molar"
   findings: "Non-restorable #26, grade 1 mobility."
   exam: true
+  should_mention: [[extract], [bleed, haemosta, hemosta, coagul, anticoag, blood thinner]]
 
 - id: soap-ibuprofen-allergy-broken-filling
   kind: soap
@@ -49,16 +56,19 @@
   complaint: "broken filling upper left"
   findings: "Fractured restoration #24."
   exam: true
+  should_mention: [[restor, filling, replace]]
 
 - id: soap-asthma-bad-breath
   kind: soap
   patient: 9
   complaint: "bad breath"
+  should_mention: [[halitosis, breath, plaque, hygiene, clean, scal]]
 
 - id: soap-wisdom-tooth-ache
   kind: soap
   patient: 2
   complaint: "wisdom tooth ache"
+  should_mention: [[wisdom, third molar, "#38", impact, pericoron]]
 
 - id: soap-periodontal-measurements
   kind: soap
@@ -93,6 +103,7 @@
   patient: 12
   clinical: "Extraction of #26 under local anaesthesia, haemostasis achieved."
   exam: true
+  should_mention: [[extract], [haemosta, hemosta, bleed]]
 
 - id: report-imaging-only
   kind: report

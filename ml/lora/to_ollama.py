@@ -7,7 +7,7 @@ Package the merged LoRA model for Ollama as `dentavis-clinical`.
 The chat template and stop tokens are copied from the installed base model
 (`ollama show qwen3:1.7b --modelfile`), so the fine-tuned model is prompted exactly
 like the base one — including think=False handling. Quantised to q4_K_M like the
-base tag, so it has the same size and speed.
+base tag (Ollama >= 0.40: "int4"; set LORA_QUANT=q4_K_M on older versions).
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MERGED = os.path.join(HERE, "out", "merged")
 NAME = os.getenv("LORA_MODEL", "dentavis-clinical")
 BASE_TAG = os.getenv("LORA_BASE_TAG", "qwen3:1.7b")
+# 4-bit like the base tag. Ollama >= 0.40 names it "int4" (older versions: "q4_K_M")
+QUANT = os.getenv("LORA_QUANT", "int4")
 
 
 def main():
@@ -32,7 +34,7 @@ def main():
     with open(path, "w", encoding="utf-8") as f:
         f.write(modelfile)
     print(f"wrote {path}; creating {NAME} ...", flush=True)
-    subprocess.run(["ollama", "create", NAME, "-f", path, "--quantize", "q4_K_M"], check=True)
+    subprocess.run(["ollama", "create", NAME, "-f", path, "--quantize", QUANT], check=True)
     print(f"done: ollama run {NAME}")
 
 

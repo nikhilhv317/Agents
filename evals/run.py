@@ -160,6 +160,12 @@ def _is_citation_claim(claim: str) -> bool:
             or claim.endswith(("(uncited)", "(not in cited source)")) or "(cites [" in claim)
 
 
+def _reasoning_text(text: str, kind: str) -> str:
+    """Where clinical relevance is judged: a SOAP note's Assessment + Plan (lowercased)."""
+    i = text.find("\nA:") if kind == "soap" else 0
+    return text[max(i, 0):].lower()
+
+
 def _reset_patient(db, pid: int, imaging: str | None = None):
     conn = db.connect()
     conn.execute("DELETE FROM patient_notes WHERE patient_id=?", (pid,))
@@ -187,29 +193,41 @@ def suite_drafting(db, only: str | None) -> dict:
             r = report_agent.generate(pid, case.get("clinical", ""), clinical_from_exam=case.get("exam", True))
             text = r["ai_summary"]
         if r["source"] != "llm":
-            print("  local model unavailable (agent fell back to demo output) — is Ollama running?")
-            return {"summary": {"skipped": "model unavailable"}, "cases": rows}
-        claims = [u["claim"] for u in r.get("unsupported", [])]
+            if not rows:   # the very first case failed: the model isn't there at all
+                print("  local model unavailable (agent fell back to demo output) — is Ollama running?")
+                return {"summary": {"skipped": "model unavailable"}, "cases": rows}
+            # later failures (e.g. invalid JSON from an unconstrained model) count as failed drafts
+            claims = ["model output unusable (fallback used)"]
+        else:
+            claims = [u["claim"] for u in r.get("unsupported", [])]
         row = {"id": case["id"], "kind": case["kind"], "seconds": round(time.time() - t0, 1),
                "unsupported": [c for c in claims if not _is_citation_claim(c)],
                "citation_issues": [c for c in claims if _is_citation_claim(c)],
                "safety": sorted(_safety_codes(safety_check(db.get_patient(pid), text))),
+               # SOAP: judged on Assessment + Plan, where the clinical reasoning is
+               # (the complaint and record in S would otherwise satisfy it trivially)
+               "missing": [g[0] for g in case.get("should_mention", [])
+                           if not any(alt.lower() in _reasoning_text(text, case["kind"]) for alt in g)],
                "text": text}
         rows.append(row)
         flags = (f"unsourced {row['unsupported']} " if row["unsupported"] else "") + \
                 (f"safety {row['safety']} " if row["safety"] else "") + \
-                (f"citations {row['citation_issues']}" if row["citation_issues"] else "")
+                (f"citations {row['citation_issues']} " if row["citation_issues"] else "") +                 (f"missing {row['missing']}" if row["missing"] else "")
         print(f"  [{'ok  ' if not flags else 'flag'}] {row['kind']:<6} {row['id']:<34} {row['seconds']:>5}s  {flags}")
     n = len(rows)
     g = sum(bool(r["unsupported"]) for r in rows)
     s = sum(bool(r["safety"]) for r in rows)
     ci = sum(bool(r["citation_issues"]) for r in rows)
+    rel_n = sum(1 for c in _load("drafting") if c.get("should_mention") and (not only or only in c["id"]))
+    rel = sum(bool(r["missing"]) for r in rows)
     summary = {"cases": n, "grounding_failures": g, "grounding_failure_rate": round(g / n, 3) if n else None,
                "safety_violations": s, "safety_violation_rate": round(s / n, 3) if n else None,
                "citation_failures": ci, "citation_failure_rate": round(ci / n, 3) if n else None,
+               "relevance_failures": rel, "relevance_cases": rel_n,
                "mean_seconds": round(sum(r["seconds"] for r in rows) / n, 1) if n else None}
     print(f"  -> grounding failure rate {_pct(g, n)} ({g}/{n}), safety violation rate {_pct(s, n)} "
-          f"({s}/{n}), citation failure rate {_pct(ci, n)} ({ci}/{n}), mean {summary['mean_seconds']}s per draft")
+          f"({s}/{n}), citation failure rate {_pct(ci, n)} ({ci}/{n}), clinical relevance misses {rel}/{rel_n}, "
+          f"mean {summary['mean_seconds']}s per draft")
     return {"summary": summary, "cases": rows}
 
 

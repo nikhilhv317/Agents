@@ -42,7 +42,12 @@ HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 TIERS: dict[str, str] = {
     "fast":   DEFAULT_MODEL,                                  # qwen3:1.7b, ~3 s/draft on the GPU
     "strong": os.getenv("STRONG_MODEL", "qwen2.5:3b"),        # bigger, already pulled locally
-    "lora":   os.getenv("LORA_MODEL", "dentavis-clinical"),   # fine-tuned adapter (ml/lora/)
+    # fine-tuned model (ml/lora/). "hf:<dir>" runs it with transformers on this
+    # machine — Ollama >= 0.40 can't import safetensors on Windows (no MLX) and a
+    # GGUF conversion needs llama.cpp. Point LORA_MODEL at an Ollama tag instead
+    # once it's been converted.
+    "lora":   os.getenv("LORA_MODEL", "hf:" + os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                           "ml", "lora", "out", "merged")),
 }
 
 # task name -> tier, set from measurements (evals/README.md "Model routing").
@@ -117,7 +122,52 @@ def complete_json(system: str, user: str, schema: dict | None = None,
     return result
 
 
+_hf_models: dict = {}
+_hf_lock = None
+
+
+def _hf_complete(path: str, system: str, user: str, s) -> dict:
+    """Local transformers backend for a fine-tuned model directory. The prompt is
+    rendered exactly as in training (ml/lora/train.py): chat template with
+    enable_thinking=False and " /no_think" on the user turn. Greedy decoding."""
+    global _hf_lock
+    import threading
+    if _hf_lock is None:
+        _hf_lock = threading.Lock()
+    try:
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+    except ImportError as e:
+        raise LLMUnavailable("install torch + transformers for hf: models") from e
+    if not os.path.isdir(path):
+        raise LLMUnavailable(f"fine-tuned model not found at {path} (see ml/lora/)")
+    with _hf_lock:
+        if path not in _hf_models:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            tok = AutoTokenizer.from_pretrained(path)
+            m = AutoModelForCausalLM.from_pretrained(
+                path, dtype=torch.bfloat16 if device == "cuda" else torch.float32, device_map={"": device})
+            _hf_models[path] = (tok, m.eval())
+        tok, m = _hf_models[path]
+        prompt = tok.apply_chat_template([{"role": "system", "content": system},
+                                          {"role": "user", "content": user + " /no_think"}],
+                                         tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        ids = tok(prompt, return_tensors="pt", add_special_tokens=False).to(m.device)
+        with torch.no_grad():
+            out = m.generate(**ids, max_new_tokens=900, do_sample=False, pad_token_id=tok.eos_token_id)
+        new = out[0, ids["input_ids"].shape[1]:]
+    s.set_attribute("prompt_eval_count", int(ids["input_ids"].shape[1]))
+    s.set_attribute("eval_count", int(new.shape[0]))
+    text = tok.decode(new, skip_special_tokens=True)
+    try:
+        return json.loads(_strip_fences(text))
+    except json.JSONDecodeError as e:   # no constrained decoding here: a broken answer -> fallback
+        raise LLMUnavailable(f"fine-tuned model returned invalid JSON: {e}") from e
+
+
 def _complete_json(model: str, system: str, user: str, schema: dict | None, s) -> dict:
+    if model.startswith("hf:"):
+        return _hf_complete(model[3:], system, user, s)
     client = _client()
     fmt = schema if schema else "json"
     msgs = [

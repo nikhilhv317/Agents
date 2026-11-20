@@ -18,6 +18,11 @@ is kept, so the targets can't teach the model something the checks would flag.
 Names, patients and wording from evals/cases are excluded (checked at the end).
 
     python ml/lora/make_data.py --n-soap 1200 --n-report 400
+
+v2 (after the first adapter's evals): plans carry allergy/condition precautions
+(latex-free materials, pregnancy, bleeding, penicillin alternatives, ...), and
+extraction and halitosis scenarios were added — v1 was perfectly grounded but
+gave every patient the same plan regardless of their record.
 """
 from __future__ import annotations
 
@@ -99,7 +104,53 @@ SCENARIOS = [
          a_exam="Ulcer, likely aphthous", a_img="Possible ulcer on imaging",
          a_none="possible ulcer", plan=["Topical analgesic gel", "Review in 2 weeks; refer if persistent"],
          past="Aphthous ulcer"),
+    # v2: extraction and halitosis (v1 had neither, so an extraction consult got a gum-disease plan)
+    dict(key="extraction", complaint=["needs a tooth removed {region}", "extraction review {region}"],
+         findings=["Non-restorable #{t}.", "Non-restorable #{t}; grade 1 mobility."],
+         imaging=None, a_exam="Non-restorable #{t}, extraction indicated", a_img=None,
+         a_none="possible extraction need", plan=["Extraction of #{t} with informed consent",
+                                                  "Post-extraction instructions"],
+         past="Non-restorable #{t}"),
+    dict(key="halitosis", complaint=["bad smell from the mouth", "halitosis for {d} weeks"],
+         findings=["Plaque and calculus generalised.", "Coated tongue; plaque on lower anteriors."],
+         imaging=None, a_exam="Plaque deposits, likely cause of halitosis", a_img=None,
+         a_none="possible plaque-related halitosis", plan=["Scaling and polishing",
+                                                           "Tongue cleaning and oral hygiene instruction"],
+         past="Halitosis"),
 ]
+
+# v2: the plan must reflect the patient, not just the complaint. v1 plans ignored
+# allergies and conditions, and the fine-tuned model learned to do the same (eval:
+# no latex-free precaution, no pregnancy or bleeding precautions).
+ANTIBIOTIC_SCENARIOS = {"abscess", "pericoronitis", "extraction"}
+INVASIVE_SCENARIOS = {"extraction", "abscess", "mobility", "caries", "gingivitis", "routine", "halitosis"}
+
+
+def _precautions(p: dict, scenario: str) -> list[str]:
+    a, c, out = p["allergies"], p["conditions"], []
+    if "Latex" in a:
+        out.append("Use latex-free gloves and materials (latex allergy)")
+    if "Penicillin" in a and scenario in ANTIBIOTIC_SCENARIOS:
+        out.append("If antibiotics are needed, avoid penicillins because of the allergy; consider clindamycin")
+    if "Lidocaine" in a and scenario in INVASIVE_SCENARIOS:
+        out.append("Use a non-lidocaine local anaesthetic (lidocaine allergy)")
+    if "Chlorhexidine" in a:
+        out.append("Avoid chlorhexidine rinses (allergy)")
+    if "Sulfa drugs" in a and scenario in ANTIBIOTIC_SCENARIOS:
+        out.append("Avoid sulfonamide antibiotics (sulfa allergy)")
+    if "Pregnant" in c:
+        out.append("Pregnancy: defer elective radiographs and non-urgent treatment; pregnancy-safe analgesia only")
+    if ("Bleeding disorder" in c or "On warfarin" in c) and scenario in INVASIVE_SCENARIOS:
+        out.append("Bleeding precautions: haematology or INR check before invasive treatment; local haemostatic measures")
+    if "Type 2 diabetes" in c:
+        out.append("Monitor healing and infection risk given diabetes")
+    if "Hypertension" in c and scenario in INVASIVE_SCENARIOS:
+        out.append("Check blood pressure before treatment")
+    if "Asthma" in c:
+        out.append("Keep the patient's inhaler available during treatment")
+    if "Epilepsy" in c and scenario in INVASIVE_SCENARIOS:
+        out.append("Confirm seizure control and medication before treatment")
+    return out
 
 
 def _fill(s: str, ctx: dict) -> str:
@@ -172,7 +223,8 @@ def soap_example(rng: random.Random, pid: int) -> dict:
     steps = sc["plan"] if mode == "exam" else [x.replace(" of #{t}", "").replace(" on #{t}", "")
                                                .replace(" to assess #{t}", "").replace("#{t}", "the affected tooth")
                                                for x in sc["plan"]]
-    plan = [_fill(x, ctx) for x in steps] + ([_pain_plan(p)] if sc["key"] in ("caries", "abscess", "ulcer") else [])
+    plan = [_fill(x, ctx) for x in steps] + ([_pain_plan(p)] if sc["key"] in ("caries", "abscess", "ulcer", "extraction") else [])
+    plan += _precautions(p, sc["key"])
     if mode != "exam":
         plan.insert(0, "Clinical examination")
     soap = {"subjective": " ".join(subj), "objective": obj, "assessment": assess, "plan": plan}
@@ -192,7 +244,9 @@ CLINICAL = {"caries": "Restoration placed on #{t}.", "gingivitis": "Scaling and 
             "abscess": "Drainage performed at #{t}.", "mobility": "Deep scaling done; mobility #{t} noted.",
             "sensitivity": "Desensitising agent applied to #{t}.", "fracture": "Restoration on #{t} replaced.",
             "pericoronitis": "Irrigation around #{t} done.", "routine": "Scaling and polishing done.",
-            "ulcer": "Topical gel prescribed for the ulcer."}
+            "ulcer": "Topical gel prescribed for the ulcer.",
+            "extraction": "Extraction of #{t} under local anaesthesia; haemostasis achieved.",
+            "halitosis": "Scaling done; tongue cleaning advised."}
 
 
 def report_example(rng: random.Random, pid: int) -> dict:
