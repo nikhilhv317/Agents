@@ -60,6 +60,7 @@ def _load(name: str) -> list[dict]:
 # safety_check returns prose; map each warning to a short, comparable code
 _SAFETY_CODES = [
     (re.compile(r"^Draft says no allergies"), lambda m: "no_allergy_claim"),
+    (re.compile(r"^Draft prescribes '.+?', but the record lists an allergy to '(.+?)'"), lambda m: f"prescribed:{m[1]}"),
     (re.compile(r"^Recorded allergy '(.+?)' appears NEGATED"), lambda m: f"negated:{m[1]}"),
     (re.compile(r"^Recorded allergy '(.+?)' is not mentioned"), lambda m: f"missing_allergy:{m[1]}"),
     (re.compile(r"^Recorded condition '(.+?)' is not mentioned"), lambda m: f"missing_condition:{m[1]}"),

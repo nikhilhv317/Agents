@@ -129,11 +129,12 @@ def ground_soap(patient: dict, complaint: str, findings: str, soap: dict,
 
 
 def _prompt(p: dict, complaint: str, findings: str) -> str:
+    from agents.untrusted import defuse   # chart text can come from the public booking page
     visits = "\n".join(
-        f"- {v['date']}: {v['complaint']} -> {v['diagnosis']} ({v['treatment']}). {v['notes']}"
+        defuse(f"- {v['date']}: {v['complaint']} -> {v['diagnosis']} ({v['treatment']}). {v['notes']}")
         for v in p["visits"]) or "No prior visits recorded."
     return (
-        f"Patient: {p['name']}, {p['age']}y {p['sex']}, MRN {p['mrn']}\n"
+        f"Patient: {defuse(p['name'])}, {p['age']}y {p['sex']}, MRN {p['mrn']}\n"
         f"Allergies: {p['allergies'] or 'none recorded'}\n"
         f"Medical history: {p['conditions'] or 'none recorded'}\n"
         f"Visit history:\n{visits}\n\n"

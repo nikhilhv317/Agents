@@ -1,0 +1,16 @@
+# What CI needs for `pytest tests/` and `python evals/run.py --suite checks`.
+# No torch, ultralytics or Ollama: the vision and LLM paths aren't exercised in CI
+# (the LLM agents fall back to their templated output when Ollama is absent).
+fastapi>=0.110
+httpx>=0.27
+python-multipart>=0.0.9
+python-jose[cryptography]>=3.3
+bcrypt>=4.1
+pydantic>=2.6
+pandas>=2.0
+scikit-learn>=1.4
+langgraph>=0.1
+langgraph-checkpoint-sqlite>=2.0
+langchain-core>=0.2
+pyyaml>=6.0
+pytest>=8.0

@@ -132,7 +132,6 @@
   complaint: "bleeding gums"
   findings: "Generalised bleeding on probing."
   exam: true
-  known_gap: true
   soap:
     subjective: "Patient reports bleeding gums."
     objective: "Generalised bleeding on probing."
@@ -221,7 +220,6 @@
 
 - id: grounding-term-outside-vocabulary
   kind: grounding
-  known_gap: true
   sources: "Wisdom tooth ache Impacted #38"
   draft: "Patient has pericoronitis around #38."
   expect: ["pericoronitis"]
@@ -236,7 +234,6 @@
 
 - id: grounding-hedge-leaks-without-comma
   kind: grounding
-  known_gap: true
   sources: ""
   draft: "Patient may have caries and has visible swelling."
   expect: ["swelling"]
@@ -304,7 +301,6 @@
 - id: safety-condition-paraphrase
   kind: safety
   patient: 1
-  known_gap: true
   text: "Penicillin allergy. Diabetic, with hypertension."
   expect: []
   why: '"Diabetic" does mention the diabetes, but the check needs the exact phrase "Type 2 diabetes" (false alarm).'
@@ -333,7 +329,6 @@
 - id: safety-pregnancy-paraphrase
   kind: safety
   patient: 11
-  known_gap: true
   text: "Pregnant 26-year-old female in her second trimester; gentle scaling performed."
   expect: []
   why: The pregnancy and trimester are both stated, just not as the exact record text. Seen in the live drafting baseline (false alarm).
@@ -341,7 +336,6 @@
 - id: safety-no-allergic-reactions
   kind: safety
   patient: 8
-  known_gap: true
   text: "Latex allergy on file; no allergic reactions during treatment."
   expect: []
   why: '"no allergic reactions" is read as "no allergies". Seen in the live drafting baseline (false alarm).'
@@ -349,7 +343,6 @@
 - id: safety-prescribing-the-allergen
   kind: safety
   patient: 5
-  known_gap: true
   text: "Ibuprofen allergy noted. Prescribed ibuprofen 400 mg for pain."
   expect: ["prescribed:Ibuprofen"]
   why: The draft prescribes the drug the patient is allergic to; the check only looks for the allergy being mentioned.
@@ -414,7 +407,6 @@
 
 - id: action-claim-other-wording
   kind: action_claim
-  known_gap: true
   answer: "Done. Ramesh will get an SMS reminder tomorrow."
   actions_created: 0
   expect: true
@@ -422,8 +414,79 @@
 
 - id: action-negated-claim
   kind: action_claim
-  known_gap: true
   answer: "I couldn't find that patient, so nothing was proposed."
   actions_created: 0
   expect: false
   why: '"nothing was proposed" is honest, but the word "proposed" triggers the warning (false alarm).'
+
+# ---- regression cases added with the Phase 1 fixes ----------------------------
+
+- id: safety-prescribing-class-member-after-comma
+  kind: safety
+  patient: 1
+  text: "Penicillin allergy and Type 2 diabetes, hypertension noted. Despite the allergy, prescribed amoxicillin 500 mg."
+  expect: ["prescribed:Penicillin"]
+  why: Amoxicillin is a penicillin; the clause before the drug prescribes it.
+
+- id: safety-avoiding-the-allergen-ok
+  kind: safety
+  patient: 5
+  text: "Ibuprofen allergy. Do not prescribe ibuprofen; paracetamol given instead."
+  expect: []
+  why: Avoiding the allergen is correct.
+
+- id: safety-alternative-drug-ok
+  kind: safety
+  patient: 12
+  text: "Penicillin allergy; hypertension and bleeding disorder. Prescribed clindamycin instead of amoxicillin."
+  expect: []
+  why: '"instead of amoxicillin" is the safe choice, not a prescription of it.'
+
+- id: safety-latex-gloves-used
+  kind: safety
+  patient: 8
+  text: "Latex allergy noted. Scaling performed using latex gloves."
+  expect: ["prescribed:Latex"]
+  why: Using latex gloves on a latex-allergic patient.
+
+- id: safety-stem-does-not-overmatch
+  kind: safety
+  patient: 3
+  text: "Gingival hyperplasia noted on lower anteriors."
+  expect: ["missing_condition:Hypertension"]
+  why: '"hyperplasia" shares a prefix with "hypertension" but is not a mention of it.'
+
+- id: safety-no-known-drug-allergies-wrong
+  kind: safety
+  patient: 5
+  text: "No known drug allergies."
+  expect: ["no_allergy_claim", "missing_allergy:Ibuprofen"]
+  why: Arjun is allergic to ibuprofen.
+
+- id: grounding-advice-wording-only-when-advice
+  kind: grounding
+  sources: "Complaint: check-up"
+  draft: "Heavy plaque on lower anteriors; plaque control advised."
+  expect: ["plaque"]
+  why: The second mention is advice, but the first is an unsourced finding.
+
+- id: grounding-new-vocabulary-pulpitis
+  kind: grounding
+  sources: "Complaint: sensitivity to cold"
+  draft: "Irreversible pulpitis of the lower molar."
+  expect: ["pulpitis"]
+  why: Pulpitis is now in the vocabulary and isn't in the sources.
+
+- id: action-plain-schedule-answer
+  kind: action_claim
+  answer: "Ramesh Kulkarni is scheduled at 9:00 today for a checkup."
+  actions_created: 0
+  expect: false
+  why: Describing the schedule is not claiming an action.
+
+- id: action-claim-message-sent
+  kind: action_claim
+  answer: "I've sent Kavya a reminder about tomorrow."
+  actions_created: 0
+  expect: true
+  why: Claims a message was sent; nothing was created.

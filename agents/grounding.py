@@ -56,6 +56,11 @@ FINDINGS = {
     "discoloration": r"discolou?r\w*",
     "infection": r"infect(?:ed|ion|ions)",
     "missing teeth": r"edentul\w*|hypodontia|missing tee?th",
+    "pericoronitis": r"pericoronitis",
+    "pulpitis": r"pulpitis",
+    "impaction": r"impact(?:ed|ion)",
+    "necrosis": r"necro(?:sis|tic)",
+    "attrition / wear": r"attrition|abrasion|erosion",
 }
 _FINDING_RE = {k: re.compile(rf"\b(?:{v})\b", re.IGNORECASE) for k, v in FINDINGS.items()}
 
@@ -79,9 +84,18 @@ _NEGATION = re.compile(r"\b(no|not|without|none|absent|denies|denied|free of|nei
                        re.IGNORECASE)
 
 
+# "and/but" + a verb starts a new clause: in "may have caries and has visible
+# swelling" the "may" must not cover the swelling (eval case grounding-hedge-leaks).
+_CLAUSE_BREAK = re.compile(r"[,:]|\b(?:and|but|with)\s+(?=(?:has|have|is|are|was|were|shows?|showed|"
+                           r"presents?|presented|reveals?|revealed|demonstrates?)\b)", re.IGNORECASE)
+# a finding word used as advice, not as an observation: "plaque control", "caries prevention"
+_ADVICE_AFTER = re.compile(r"\s+(?:control|prevention|management|instructions?|education|reduction|"
+                           r"risk|precautions?)\b", re.IGNORECASE)
+
+
 def _clause_before(sentence: str, start: int) -> str:
-    # the same clause, up to the previous comma/colon
-    return re.split(r"[,:]", sentence[:start])[-1]
+    # the same clause, up to the previous comma/colon or "and"+verb
+    return _CLAUSE_BREAK.split(sentence[:start])[-1]
 
 
 def _hedged(sentence: str, start: int) -> bool:
@@ -123,7 +137,7 @@ def check(draft: str, sources: str, exam_findings_given: bool = False,
                 "The draft describes an examination, but no exam findings were entered.", sent)
         for name, rx in _FINDING_RE.items():
             for m in rx.finditer(sent):
-                if (_hedged(sent, m.start()) or rx.search(src)
+                if (_hedged(sent, m.start()) or rx.search(src) or _ADVICE_AFTER.match(sent, m.end())
                         or (allow_negated and _negated(sent, m.start()))):
                     continue
                 add(name, why(m.group(0), rx), sent)

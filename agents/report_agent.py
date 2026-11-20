@@ -66,8 +66,9 @@ def generate(patient_id: int, clinical: str = "", clinical_from_exam: bool = Tru
 
     imaging = _receive_imaging_handoff(patient_id)
 
+    from agents.untrusted import defuse   # the name can come from the public booking page
     prompt = (
-        f"Patient: {patient['name']}, {patient['age']}y {patient['sex']}\n"
+        f"Patient: {defuse(patient['name'])}, {patient['age']}y {patient['sex']}\n"
         f"Allergies: {patient['allergies'] or 'none'}\n"
         f"History: {patient['conditions'] or 'none'}\n"
         f"Imaging findings: {imaging}\n"
