@@ -452,6 +452,17 @@
           <div id="trace-rows"></div>
         </div>
         <div class="card">
+          <div class="section-label">Data exchange (admin)</div>
+          <p style="color:var(--muted);font-size:13px;margin-top:0">Import from a practice-management export (CSV), a hospital feed (HL7 v2 ADT^A04/A08) or a FHIR Patient/Bundle. Existing charts are reused when name and phone match. Export any chart as FHIR from the Patients page.</p>
+          <div class="field"><label>File (CSV or FHIR JSON)</label><input type="file" id="imp-file" accept=".csv,.json"></div>
+          <div class="btn-row" style="margin-top:0"><button class="btn tiny" onclick="importData('patients')">Import patients CSV</button>
+            <button class="btn tiny" onclick="importData('appointments')">Import appointments CSV</button>
+            <button class="btn tiny" onclick="importData('fhir')">Import FHIR</button></div>
+          <div class="field"><label>HL7 v2 message</label><textarea id="imp-hl7" rows="4" placeholder="MSH|^~\&|HIS|HOSP|DENTAVIS|CLINIC|...||ADT^A04|..."></textarea></div>
+          <button class="btn tiny" onclick="importData('hl7')">Send HL7 message</button>
+          <pre id="import-result" style="font-size:11px;white-space:pre-wrap;color:var(--muted)"></pre>
+        </div>
+        <div class="card">
           <div class="section-label">Basic information</div>
           <div class="grid2">
             <div class="field"><label>Clinic Name</label><input value="Visukhi Dental Clinic"></div>
@@ -1052,12 +1063,38 @@ async function finalizeFromView(id){
 // ---- Patients list + CRUD ----
 let PATIENTS=[], EDIT_ID=null;
 async function loadPatientList(){ PATIENTS=await api('/api/patients')||[]; renderPatientList(); }
+async function exportFhir(id, mrn){
+  const b=await api('/api/patients/'+id+'/fhir'); if(!b||!b.resourceType) return;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(b,null,2)],{type:'application/fhir+json'}));
+  a.download=`${mrn||'patient-'+id}.fhir.json`; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ---- data exchange (Settings): CSV / HL7 / FHIR imports, admin only ----
+async function importData(kind){
+  const out=$('#import-result'); out.textContent='Importing…';
+  let r;
+  if(kind==='hl7'){
+    const msg=($('#imp-hl7')||{}).value||'';
+    const h={'Content-Type':'text/plain'}; if(TOKEN) h['Authorization']='Bearer '+TOKEN;
+    const res=await fetch('/api/interop/hl7',{method:'POST',headers:h,body:msg.replace(/\n/g,'\r')});
+    r=await res.json();
+  } else {
+    const f=($('#imp-file')||{}).files; if(!f||!f[0]){ out.textContent='Choose a file first.'; return; }
+    if(kind==='fhir'){ r=await api('/api/interop/fhir',{method:'POST',body:await f[0].text()}); }
+    else { const fd=new FormData(); fd.append('file',f[0]); r=await apiForm('/api/interop/csv/'+kind,fd); }
+  }
+  out.textContent=JSON.stringify(r,null,1).slice(0,800);
+  loadPatientList&&loadPatientList();
+}
+
 function renderPatientList(){
   const q=(($('#search-patients')||{}).value||'').toLowerCase();
   const rows=PATIENTS.filter(p=>(p.name||'').toLowerCase().includes(q));
   const el=$('#patients-rows');if(!el)return;
   el.innerHTML=rows.length?rows.map(p=>`<tr><td><span class="plink" onclick="openChart(${p.id})">${esc(p.name)}</span></td><td>${esc(p.mrn)}</td><td>${p.age||''}${esc(p.sex||'')}</td><td style="text-align:right">
     <button class="btn tiny" onclick="editPatient(${p.id})">Edit</button>
+    <button class="btn tiny" onclick="exportFhir(${p.id},'${esc(p.mrn)}')" title="Download the chart as a FHIR R4 Bundle">FHIR</button>
     <button class="btn tiny b-rej" onclick="deletePatient(${p.id})">Delete</button>
     <button class="btn tiny primary" onclick="openChart(${p.id})">Open chart</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">No matches.</td></tr>';
 }

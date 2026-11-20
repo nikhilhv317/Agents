@@ -12,7 +12,7 @@ Agents:
     Smart Scheduling      -> GET  /api/scheduling/today                  (morning job + on demand)
                              POST /api/scheduling/approve
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Body
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Body, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -691,6 +691,72 @@ def api_retrain(force: bool = False, user=Depends(require_admin)):
         return agents.run("retraining", force=force, verbose=False)
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+# ---- Interoperability: FHIR, HL7 v2, DICOM, CSV (interop/) ------------------
+
+@app.get("/api/patients/{patient_id}/fhir")
+def api_patient_fhir(patient_id: int, user=Depends(require_auth)):
+    """The patient's chart as a validated FHIR R4 Bundle."""
+    from interop import fhir
+    try:
+        return fhir.patient_bundle(patient_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/interop/fhir")
+def api_import_fhir(resource: dict = Body(...), user=Depends(require_admin)):
+    """Create or update a chart from a FHIR Patient (or a Bundle with allergies/conditions)."""
+    from interop import fhir
+    try:
+        return fhir.import_patient(resource)
+    except Exception as e:   # pydantic ValidationError, ValueError
+        raise HTTPException(400, f"Not a valid FHIR Patient: {str(e)[:300]}")
+
+
+@app.post("/api/interop/hl7")
+async def api_import_hl7(request: Request, user=Depends(require_admin)):
+    """HL7 v2 ADT^A04/A08 as the raw request body. Returns the chart id and the ACK."""
+    from interop import hl7
+    result = hl7.handle_adt((await request.body()).decode("utf-8", "replace"))
+    if "error" in result:
+        raise HTTPException(400, detail=result)
+    return result
+
+
+@app.post("/api/interop/csv/{kind}")
+async def api_import_csv(kind: str, file: UploadFile = File(...), user=Depends(require_admin)):
+    """Practice-management export: kind = patients | appointments."""
+    from interop import csv_io
+    text = (await file.read()).decode("utf-8-sig", "replace")
+    if kind == "patients":
+        return csv_io.import_patients(text)
+    if kind == "appointments":
+        return csv_io.import_appointments(text)
+    raise HTTPException(404, "kind must be patients or appointments")
+
+
+@app.post("/api/imaging/dicom")
+async def api_imaging_dicom(file: UploadFile = File(...), patient_id: int = Form(None),
+                            user=Depends(require_auth)):
+    """A DICOM image through the same gate + detector as a photo upload."""
+    import tempfile
+    from interop import dicom
+    from vision.pipeline import PipelineUnavailable
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".dcm")
+    tmp.write(await file.read())
+    tmp.close()
+    try:
+        r = dicom.screen(tmp.name, patient_id)
+        r["filename"] = file.filename
+        return r
+    except PipelineUnavailable as e:
+        raise HTTPException(503, f"Imaging pipeline not ready: {e}")
+    except Exception as e:
+        raise HTTPException(400, f"Could not read DICOM: {e}")
+    finally:
+        os.unlink(tmp.name)
 
 
 @app.get("/api/traces")
